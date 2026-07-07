@@ -1,0 +1,1514 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>단면도 익스플로러</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  :root{
+    --bg:#0E1B2A; --panel:#14263B; --line:#26425E;
+    --cyan:#5BC8DE; --brass:#E8A13A; --ink:#DCE7F0; --muted:#7E94A8;
+    --green:#5BD6A0; --red:#E2796F; --paper:#F4EFE0; --paper-ink:#1C3247; --material:#E7DEC6;
+    --proj:#2F7DB5;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:ui-sans-serif,system-ui,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+    background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);
+    background-size:34px 34px; background-position:center;
+    display:flex;flex-direction:column;min-height:100%;
+  }
+  .mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+
+  .watermark{
+    position:fixed;top:5px;left:50%;transform:translateX(-50%);
+    font-family:ui-monospace,monospace;font-size:10px;letter-spacing:.32em;
+    color:rgba(220,231,240,.16);pointer-events:none;z-index:80;text-transform:uppercase;
+  }
+
+  header{padding:14px 20px;display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;border-bottom:1px solid var(--line)}
+  header .tagx{font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.18em;color:var(--cyan);border:1px solid var(--cyan);padding:3px 8px;border-radius:2px;text-transform:uppercase}
+  header h1{font-size:18px;margin:0;font-weight:650;letter-spacing:-.01em}
+  header .sub{color:var(--muted);font-size:13px}
+
+  main{flex:1;display:grid;grid-template-columns:1.25fr .95fr;gap:1px;background:var(--line);min-height:0}
+  @media (max-width:860px){ main{grid-template-columns:1fr;grid-template-rows:minmax(260px,42vh) auto} }
+
+  .stage{background:var(--bg);position:relative;min-height:0;overflow:hidden}
+  #gl{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
+  #gl:active{cursor:grabbing}
+  .hint3d{position:absolute;left:14px;bottom:12px;right:14px;pointer-events:none;font-size:12px;color:var(--muted);display:flex;gap:14px;flex-wrap:wrap}
+  .hint3d b{color:var(--cyan);font-weight:600}
+  .mystery-overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;background:rgba(14,27,42,.86);text-align:center;font-size:13px;padding:0 24px}
+  .mystery-overlay b{font-size:16px;color:var(--cyan)}
+  .mystery-overlay span{color:var(--muted);max-width:280px}
+  .mystery-overlay.hidden{display:none}
+
+  .deck{background:var(--panel);display:flex;flex-direction:column;min-height:0;padding:16px;gap:12px;overflow:auto}
+
+  .tabs{display:flex;flex-wrap:wrap;gap:6px}
+  .tab{flex:1 1 120px;background:transparent;border:1px solid var(--line);color:var(--muted);padding:9px 8px;border-radius:4px;cursor:pointer;font-size:12.5px;font-weight:600;transition:.15s}
+  .tab[aria-pressed="true"]{background:var(--cyan);color:#06141f;border-color:var(--cyan)}
+  .tab:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+
+  /* 단면도 종류 토글(자유 탐색) */
+  .viewRow{display:flex;align-items:center;gap:8px;background:#0f2032;border:1px solid var(--line);border-radius:6px;padding:8px 10px;flex-wrap:wrap}
+  .viewRow .axisLabel{font-size:11px;color:var(--muted);letter-spacing:.08em;flex:none}
+  .viewBtns{display:flex;gap:5px;flex-wrap:wrap}
+  .viewBtn{background:transparent;border:1px solid var(--line);color:var(--ink);padding:6px 9px;border-radius:4px;cursor:pointer;font-weight:600;font-size:11.5px}
+  .viewBtn[aria-pressed="true"]{background:var(--proj);color:#04121c;border-color:var(--proj)}
+  .viewBtn:disabled{opacity:.32;cursor:default}
+  .viewDesc{flex-basis:100%;font-size:11px;color:var(--muted);line-height:1.35}
+
+  /* 단면 종류 맞히기(도전) 선택지 */
+  .typechoices{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+  .typechoice{background:var(--paper);border:2px solid transparent;border-radius:8px;padding:9px 8px;cursor:pointer;color:var(--paper-ink);text-align:left;line-height:1.25}
+  .typechoice b{display:block;font-size:13px;font-weight:700}
+  .typechoice span{display:block;font-size:10.5px;color:#5b7286;margin-top:2px}
+  .typechoice:hover:not(:disabled){border-color:var(--cyan)}
+  .typechoice.correct{border-color:var(--green);background:#e3f5ec}
+  .typechoice.wrong{border-color:var(--red);background:#fbecea}
+  .typechoice:disabled{cursor:default}
+  .typechoice:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+
+  .axisRow{display:flex;align-items:center;gap:8px;background:#0f2032;border:1px solid var(--line);border-radius:6px;padding:8px 10px;flex-wrap:wrap}
+  .axisRow .axisLabel{font-size:11px;color:var(--muted);letter-spacing:.08em;flex:none}
+  .axisBtns{display:flex;gap:5px;flex:none}
+  .axisBtn{background:transparent;border:1px solid var(--line);color:var(--ink);width:30px;height:26px;border-radius:4px;cursor:pointer;font-weight:700;font-size:12.5px}
+  .axisBtn[aria-pressed="true"]{background:var(--brass);color:#241a06;border-color:var(--brass)}
+  .axisDesc{font-size:11.5px;color:var(--muted);margin-left:auto;text-align:right}
+
+  .partrow{display:flex;flex-direction:column;gap:9px}
+  .partgroup{display:flex;flex-direction:column;gap:5px}
+  .partgroup-label{font-size:10.5px;letter-spacing:.04em;color:var(--muted);padding-left:1px}
+  .partgroup-label b{color:var(--cyan);font-weight:700}
+  .partrow-inner{display:flex;gap:6px;flex-wrap:wrap}
+  .pill{flex:none;padding:6px 10px;font-size:11.5px}
+
+  .paperwrap{background:var(--paper);border-radius:6px;padding:12px;position:relative;box-shadow:0 1px 0 #00000033, inset 0 0 0 1px #0000000d}
+  .paperwrap .cap{position:absolute;top:10px;left:12px;font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.12em;color:#5b7286}
+  #section{display:block;width:100%;height:178px}
+  .seclegend{display:flex;flex-wrap:wrap;gap:5px 14px;font-size:11px;color:var(--muted);align-items:center;line-height:1.4;margin-top:-4px}
+  .seclegend span{display:inline-flex;align-items:center;gap:5px}
+  .seclegend .sw{display:inline-block;width:18px;flex:none}
+  .seclegend .sw.hatch{height:11px;background:repeating-linear-gradient(45deg,#E7DEC6 0 3px,#b89a5e 3px 4px);border:1px solid #1C3247}
+  .seclegend .sw.proj{height:0;border-top:2px dashed var(--proj)}
+
+  .readout{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--muted)}
+  .state.solid{color:var(--cyan)} .state.bore{color:var(--brass)} .state.match{color:var(--green)} .state.outside{color:var(--proj)}
+
+  .control label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}
+  input[type=range]{width:100%;-webkit-appearance:none;appearance:none;height:6px;border-radius:3px;background:linear-gradient(90deg,var(--line),#33536f);outline:none}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;background:var(--brass);border:3px solid #2a2113;cursor:pointer;box-shadow:0 1px 4px #0008}
+  input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;background:var(--brass);border:3px solid #2a2113;cursor:pointer}
+  input[type=range]:focus-visible{outline:2px solid var(--cyan);outline-offset:4px}
+
+  .panel{border-top:1px solid var(--line);padding-top:12px;display:flex;flex-direction:column;gap:10px}
+  .panel.hidden{display:none}
+  .crow{display:flex;align-items:center;gap:14px}
+  .target{background:var(--paper);border-radius:6px;padding:8px;width:120px;flex:none;position:relative}
+  .target .cap{position:absolute;top:6px;left:8px;font-family:ui-monospace,monospace;font-size:10px;color:#5b7286;letter-spacing:.1em}
+  #targetCanvas{display:block;width:104px;height:84px}
+  .cinfo{font-size:13px;color:var(--muted);line-height:1.5}
+  .cinfo .big{font-size:14px;color:var(--ink);font-weight:650;display:block;margin-bottom:2px}
+  .scorebar{display:flex;gap:18px;font-size:13px;color:var(--muted)}
+  .scorebar b{color:var(--ink)}
+  .toast{font-size:13px;font-weight:600;min-height:18px}
+  .toast.ok{color:var(--green)} .toast.go{color:var(--brass)}
+  .btn{background:var(--cyan);color:#06141f;border:none;border-radius:5px;padding:9px 14px;font-weight:700;cursor:pointer;font-size:13px}
+  .btn.ghost{background:transparent;color:var(--muted);border:1px solid var(--line)}
+  .btn:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+
+  .choices{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .choice{background:var(--paper);border:2px solid transparent;border-radius:8px;padding:6px;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;color:var(--paper-ink);font-size:10.5px;font-weight:650;text-align:center;line-height:1.2}
+  .choice canvas{width:36px;height:36px}
+  .choice:hover:not(:disabled){border-color:var(--cyan)}
+  .choice.correct{border-color:var(--green);background:#e3f5ec}
+  .choice.wrong{border-color:var(--red);background:#fbecea}
+  .choice.viewing{box-shadow:0 0 0 3px var(--brass)}
+  .choice:disabled{cursor:default;opacity:.92}
+  .choice:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+
+  footer{padding:10px 20px;border-top:1px solid var(--line);color:var(--muted);font-size:12px}
+  footer b{color:var(--cyan)}
+
+  /* === 모바일/터치 보정 (기본 규칙보다 뒤에 두어 우선 적용) === */
+  /* 터치 기기·좁은 폰: 손가락으로 누르기 쉽게 버튼·슬라이더를 키운다 */
+  @media (pointer:coarse), (max-width:560px){
+    .tab{padding:12px 8px;font-size:13px}
+    .axisBtn{width:42px;height:36px;font-size:14px}
+    .pill{padding:10px 13px;font-size:12.5px}
+    input[type=range]{height:10px}
+    input[type=range]::-webkit-slider-thumb{width:30px;height:30px}
+    input[type=range]::-moz-range-thumb{width:30px;height:30px}
+    .btn{padding:12px 16px}
+    .choice{padding:9px}
+    .choice canvas{width:44px;height:44px}
+  }
+  /* 좁은 폰 화면: 머리말·여백을 줄여 본문 공간을 확보 */
+  @media (max-width:560px){
+    header{padding:10px 14px;gap:8px}
+    header h1{font-size:16px}
+    header .sub{display:none}
+    .hint3d{font-size:11px;gap:8px;bottom:8px}
+    .deck{padding:13px;gap:11px}
+    footer{font-size:11px;padding:8px 14px}
+  }
+</style>
+</head>
+<body>
+  <div class="watermark">hong</div>
+  <header>
+    <span class="tagx">Section · A–A</span>
+    <h1>단면도 익스플로러</h1>
+    <span class="sub">부품·절단 방향을 골라 단면을 확인하고, 거꾸로 단면만 보고 부품도 맞혀보세요</span>
+  </header>
+
+  <main>
+    <section class="stage">
+      <canvas id="gl"></canvas>
+      <div class="mystery-overlay hidden" id="mysteryOverlay">
+        <b>미공개 모델</b>
+        <span>정답을 고르면 어떤 부품이었는지 3D로 확인할 수 있어요.</span>
+      </div>
+      <div class="hint3d">
+        <span><b>드래그</b> 모델 회전</span>
+        <span><b>주황 평면</b> 잡고 절단</span>
+        <span><b>휠·두 손가락</b> 확대·축소</span>
+      </div>
+    </section>
+
+    <aside class="deck">
+      <div class="tabs" role="group" aria-label="모드 선택">
+        <button class="tab" id="tabFree" aria-pressed="true">자유 탐색</button>
+        <button class="tab" id="tabMatch" aria-pressed="false">도전 — 매칭</button>
+        <button class="tab" id="tabDetect" aria-pressed="false">도전 — 탐정</button>
+        <button class="tab" id="tabType" aria-pressed="false">도전 — 단면 종류</button>
+      </div>
+
+      <div class="axisRow">
+        <span class="axisLabel">절단 방향</span>
+        <div class="axisBtns" id="axisBtns"></div>
+        <span class="axisDesc" id="axisDesc">폭(가로) 방향으로 자르기</span>
+      </div>
+
+      <div class="partrow" id="partRow"></div>
+
+      <div class="viewRow" id="viewRow">
+        <span class="axisLabel">단면도 종류</span>
+        <div class="viewBtns" id="viewBtns"></div>
+        <span class="viewDesc" id="viewDesc"></span>
+      </div>
+
+      <div class="paperwrap">
+        <span class="cap">단면 A–A</span>
+        <canvas id="section"></canvas>
+      </div>
+
+      <div class="seclegend">
+        <span><i class="sw hatch"></i>잘린 단면 (빗금)</span>
+        <span><i class="sw proj"></i>절단면 너머 외형선 · 완전히 바깥이면 투상도만 표시 — 보는 방향에 따라 달라져요</span>
+      </div>
+
+      <div class="readout" id="readoutRow">
+        <span>절단 위치 <span class="mono" id="posOut">x = 0.00</span></span>
+        <span class="state solid" id="stateOut">바깥 — 솔리드</span>
+      </div>
+
+      <div class="control" id="controlRow">
+        <label for="slider">절단면 위치</label>
+        <input id="slider" type="range" min="-2" max="2" step="0.01" value="-1.4" />
+      </div>
+
+      <!-- 매칭 모드 -->
+      <div class="panel hidden" id="matchPanel">
+        <div class="crow">
+          <div class="target"><span class="cap">목표</span><canvas id="targetCanvas"></canvas></div>
+          <div class="cinfo"><span class="big" id="matchTitle">이 단면을 만드세요</span>절단면을 움직여 목표와 똑같은 단면을 만들면 정답.</div>
+        </div>
+        <div class="scorebar"><span>문제 <b id="roundOut">1</b> / 5</span><span>맞춘 개수 <b id="scoreOut">0</b></span></div>
+        <div class="toast go" id="toast">목표 단면에 맞춰 보세요.</div>
+        <div style="display:flex;gap:8px">
+          <button class="btn" id="nextBtn" style="display:none">다음 문제</button>
+          <button class="btn ghost" id="restartBtn">처음부터</button>
+        </div>
+      </div>
+
+      <!-- 탐정 모드 -->
+      <div class="panel hidden" id="detectPanel">
+        <div class="cinfo"><span class="big">이 단면, 어떤 부품을 자른 걸까요?</span>한 단면만으로는 답이 여러 개일 수 있어요. 절단 방향(X·Y·Z)을 바꿔 여러 방향에서 살펴보고 골라보세요. (3D는 정답을 고르면 공개돼요)</div>
+        <div class="choices" id="choices"></div>
+        <div class="scorebar"><span>문제 <b id="roundOutD">1</b> / 5</span><span>맞춘 개수 <b id="scoreOutD">0</b></span></div>
+        <div class="toast go" id="toastD">단면을 잘 살펴보고 골라보세요.</div>
+        <div style="display:flex;gap:8px">
+          <button class="btn" id="nextDetectBtn" style="display:none">다음 문제</button>
+          <button class="btn ghost" id="restartDetectBtn">처음부터</button>
+        </div>
+      </div>
+
+      <!-- 단면 종류 맞히기 모드 -->
+      <div class="panel hidden" id="typePanel">
+        <div class="cinfo"><span class="big">이 단면도는 어떤 종류일까요?</span>같은 부품이라도 그리는 방식이 달라요. 빗금·중심선·파단선·계단 절단선을 단서로 골라보세요.</div>
+        <div class="typechoices" id="typeChoices"></div>
+        <div class="scorebar"><span>문제 <b id="roundOutT">1</b> / 5</span><span>맞춘 개수 <b id="scoreOutT">0</b></span></div>
+        <div class="toast go" id="toastT">단면도를 살펴보고 종류를 골라보세요.</div>
+        <div style="display:flex;gap:8px">
+          <button class="btn" id="nextTypeBtn" style="display:none">다음 문제</button>
+          <button class="btn ghost" id="restartTypeBtn">처음부터</button>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <footer>
+    학습 포인트 — 구멍 축과 나란히 자르면 <b>슬롯</b>, 수직으로 자르면 <b>원</b>이 나와요. 육각 머리는 보는 방향에 따라 <b>육각형 ↔ 직사각형</b>으로, 계단형 블록은 가로지르면 <b>층이 진 폭</b>으로 보여요. L자 브라켓은 위치에 따라 <b>한쪽 팔 또는 L 전체</b>가, 속 빈 파이프는 옆에서 자르면 <b>벽 두께만큼 두 줄</b>이 보여요.
+  </footer>
+
+<script>
+(function(){
+  "use strict";
+
+  function rand(a,b){ return a+Math.random()*(b-a); }
+  function shuffle(arr){ for(let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; } return arr; }
+
+  // =========================================================
+  // 축 유틸
+  // =========================================================
+  function otherAxes(axis){
+    if(axis==="z") return ["x","y"];
+    if(axis==="x") return ["y","z"];
+    return ["x","z"]; // axis==="y"
+  }
+  const AXES = {
+    x:{ label:"X", desc:"폭(가로) 방향으로 자르기", railOffset:{y:1.9,z:0}, vec:new THREE.Vector3(1,0,0) },
+    y:{ label:"Y", desc:"높이(세로) 방향으로 자르기", railOffset:{x:0,z:1.9}, vec:new THREE.Vector3(0,1,0) },
+    z:{ label:"Z", desc:"깊이(앞뒤) 방향으로 자르기", railOffset:{x:1.9,y:0}, vec:new THREE.Vector3(0,0,1) }
+  };
+
+  // =========================================================
+  // 부품 정의
+  // =========================================================
+  function boreCoord(b,axisName){
+    const [a,c]=otherAxes(b.axis);
+    return axisName===a ? b.a0 : b.b0;
+  }
+  function partSizeAlong(part,axis){ return axis==="x"?part.sizeX:axis==="y"?part.sizeY:part.sizeZ; }
+  function segHalfExtent(seg){ return seg.shape==="rect" ? Math.max(seg.W,seg.H)/2 : seg.R; }
+
+  const PARTS = {
+    hole1:{ id:"hole1", label:"구멍 1개 블록 (Z방향)", kind:"rect",
+      sizeX:4,sizeY:2.5,sizeZ:3, boreAxis:"z",
+      bores:[{axis:"z",a0:0,b0:0,R:0.8}] },
+    // 두 구멍은 대각으로 떨어져 3D상 겹치지 않고(중심거리 2*sqrt(0.7²+0.7²)≈1.98 > 반지름합 0.9),
+    // 계단단면도로 자르면 두 슬롯이 뚜렷이 분리돼 보이도록 위치·지름을 잡았다.
+    hole2:{ id:"hole2", label:"구멍 2개 블록 (Z방향)", kind:"rect",
+      sizeX:4,sizeY:2.5,sizeZ:3, boreAxis:"z",
+      bores:[{axis:"z",a0:-0.7,b0:0.7,R:0.45},{axis:"z",a0:0.7,b0:-0.7,R:0.45}] },
+    holeX:{ id:"holeX", label:"구멍 1개 블록 (X방향)", kind:"rect",
+      sizeX:4,sizeY:2.5,sizeZ:3, boreAxis:"x",
+      bores:[{axis:"x",a0:0,b0:0,R:0.7}] },
+    pin:{ id:"pin", label:"원기둥 핀 (Y축)", kind:"round",
+      mainAxis:"y", segments:[{mFrom:-2,mTo:2,shape:"circle",R:0.75,Rin:0}] },
+    shaft:{ id:"shaft", label:"단차 축 (X축)", kind:"round",
+      mainAxis:"x", segments:[{mFrom:-2,mTo:0,shape:"circle",R:1.0,Rin:0},{mFrom:0,mTo:2,shape:"circle",R:0.55,Rin:0}] },
+    bushing:{ id:"bushing", label:"속 빈 축 — 부싱 (X축)", kind:"round",
+      mainAxis:"x", segments:[
+        {mFrom:-2,mTo:-1.3,shape:"circle",R:0.8,Rin:0},
+        {mFrom:-1.3,mTo:1.3,shape:"circle",R:0.8,Rin:0.4},
+        {mFrom:1.3,mTo:2,shape:"circle",R:0.8,Rin:0}
+      ] },
+    hexHead:{ id:"hexHead", label:"육각 볼트 머리 (X축)", kind:"round",
+      mainAxis:"x", segments:[{mFrom:-2,mTo:2,shape:"hex",R:0.95}] },
+    stepBlock:{ id:"stepBlock", label:"계단형 블록 (X축)", kind:"round",
+      mainAxis:"x", segments:[
+        {mFrom:-2,mTo:-0.5,shape:"rect",W:2.2,H:1.8},
+        {mFrom:-0.5,mTo:0.6,shape:"rect",W:1.4,H:1.1},
+        {mFrom:0.6,mTo:2,shape:"rect",W:0.7,H:0.55}
+      ] },
+    // L자 브라켓: 두 개의 판(세로 팔 + 가로 팔)을 합친 형상
+    lbracket:{ id:"lbracket", label:"L자 브라켓 (X축)", kind:"boxes", mainAxis:"x",
+      boxes:[
+        {x:[-2,2], y:[-1.1,1.1],   z:[-1.1,-0.45]},
+        {x:[-2,2], y:[-1.1,-0.45], z:[-1.1,1.1]}
+      ] },
+    // 속 빈 사각 파이프: 네 개의 벽(위·아래·좌·우)으로 가운데가 비어 있음
+    squarePipe:{ id:"squarePipe", label:"속 빈 사각 파이프 (X축)", kind:"boxes", mainAxis:"x",
+      boxes:[
+        {x:[-2,2], y:[0.55,1.1],    z:[-1.1,1.1]},
+        {x:[-2,2], y:[-1.1,-0.55],  z:[-1.1,1.1]},
+        {x:[-2,2], y:[-0.55,0.55],  z:[-1.1,-0.55]},
+        {x:[-2,2], y:[-0.55,0.55],  z:[0.55,1.1]}
+      ] }
+  };
+  // 부품을 유형별로 묶어 선택 UI에 표시 (PART_ORDER는 여기서 펼쳐 파생)
+  const PART_GROUPS=[
+    { name:"구멍 뚫린 블록",     ids:["hole1","hole2","holeX"] },
+    { name:"둥근 축·핀",         ids:["pin","shaft","bushing"] },
+    { name:"각진·특수 프로파일", ids:["hexHead","stepBlock","lbracket","squarePipe"] }
+  ];
+  const PART_ORDER=PART_GROUPS.reduce(function(a,g){ return a.concat(g.ids); },[]);
+  const REF_R=1.15;
+
+  function isAxisTrivial(part,axis){
+    if(part.kind==="rect") return part.boreAxis===axis;
+    if(part.kind==="boxes") return axis===part.mainAxis;
+    return axis===part.mainAxis && part.segments.length===1;
+  }
+
+  // =========================================================
+  // 단면 계산
+  // =========================================================
+  function computeRectSection(part,axis,t){
+    const [dim1,dim2]=otherAxes(axis);
+    if(part.boreAxis===axis){
+      const circles=part.bores.map(b=>({cx:boreCoord(b,dim1),cy:boreCoord(b,dim2),r:b.R}));
+      return {mode:"rectCircles", w:partSizeAlong(part,dim1), h:partSizeAlong(part,dim2),
+        circles, hLabel:dim1.toUpperCase(), vLabel:dim2.toUpperCase()};
+    }
+    const axR = (dim1===part.boreAxis) ? dim2 : dim1;
+    const sizeB = partSizeAlong(part, part.boreAxis);
+    const sizeR = partSizeAlong(part, axR);
+    const gaps = part.bores.map(b=>{
+      const u0=boreCoord(b,axis), v0=boreCoord(b,axR);
+      const dx=t-u0; const hh = Math.abs(dx)<b.R ? 2*Math.sqrt(b.R*b.R-dx*dx) : 0;
+      return {yc:v0,h:hh};
+    });
+    return {mode:"rectBand", sizeB, sizeR, gaps, hLabel:part.boreAxis.toUpperCase(), vLabel:axR.toUpperCase()};
+  }
+  function computeRoundSection(part,axis,t){
+    if(axis===part.mainAxis){
+      let seg=part.segments.find(s=> t>=s.mFrom && t<=s.mTo);
+      if(!seg) seg=part.segments[t<0?0:part.segments.length-1];
+      if(seg.shape==="hex") return {mode:"roundCircle", shape:"hex", R:seg.R};
+      if(seg.shape==="rect") return {mode:"roundCircle", shape:"rect", W:seg.W, H:seg.H};
+      return {mode:"roundCircle", shape:"circle", outer:seg.R, inner:seg.Rin||0};
+    }
+    const [a]=otherAxes(part.mainAxis);
+    const isA = axis===a;
+    const rects=[];
+    part.segments.forEach(seg=>{
+      let Hout=0, Hin=0;
+      if(seg.shape==="circle"){
+        Hout = Math.abs(t)<seg.R ? Math.sqrt(seg.R*seg.R-t*t) : 0;
+        Hin = (seg.Rin>0 && Math.abs(t)<seg.Rin) ? Math.sqrt(seg.Rin*seg.Rin-t*t) : 0;
+      } else if(seg.shape==="hex"){
+        const R=seg.R, at=Math.abs(t);
+        if(isA){ Hout = at>R ? 0 : (at<=R/2 ? R*Math.sqrt(3)/2 : Math.sqrt(3)*(R-at)); }
+        else { const lim=R*Math.sqrt(3)/2; Hout = at>lim ? 0 : (R-at/Math.sqrt(3)); }
+      } else if(seg.shape==="rect"){
+        if(isA){ Hout = Math.abs(t)<=seg.W/2 ? seg.H/2 : 0; }
+        else { Hout = Math.abs(t)<=seg.H/2 ? seg.W/2 : 0; }
+      }
+      if(Hout<=0) return;
+      const bands = Hin>0 ? [[-Hout,-Hin],[Hin,Hout]] : [[-Hout,Hout]];
+      rects.push({mFrom:seg.mFrom,mTo:seg.mTo,bands});
+    });
+    return {mode:"roundBands", rects, mainLabel:part.mainAxis.toUpperCase()};
+  }
+  // ---- 박스 합집합 단면 (L형 브라켓·속 빈 파이프) ----
+  function boxesExtent(part,axis){
+    let lo=Infinity,hi=-Infinity;
+    part.boxes.forEach(function(b){ lo=Math.min(lo,b[axis][0]); hi=Math.max(hi,b[axis][1]); });
+    return [lo,hi];
+  }
+  function boxGrid(rects){
+    const xs=[], ys=[];
+    rects.forEach(function(r){ xs.push(r.a0,r.a1); ys.push(r.b0,r.b1); });
+    const ux=Array.from(new Set(xs)).sort(function(p,q){return p-q;});
+    const uy=Array.from(new Set(ys)).sort(function(p,q){return p-q;});
+    const nx=ux.length-1, ny=uy.length-1;
+    function fill(i,j){
+      if(i<0||j<0||i>=nx||j>=ny) return false;
+      const cx=(ux[i]+ux[i+1])/2, cy=(uy[j]+uy[j+1])/2;
+      return rects.some(function(r){ return cx>r.a0&&cx<r.a1&&cy>r.b0&&cy<r.b1; });
+    }
+    return {xs:ux,ys:uy,nx:nx,ny:ny,fill:fill};
+  }
+  // 박스 합집합의 바깥/안쪽 경계선만 추려 깔끔한 외곽선을 그린다
+  function rectUnionEdges(rects){
+    const g=boxGrid(rects), edges=[];
+    for(let i=0;i<g.nx;i++) for(let j=0;j<g.ny;j++){
+      if(!g.fill(i,j)) continue;
+      if(!g.fill(i-1,j)) edges.push([[g.xs[i],g.ys[j]],[g.xs[i],g.ys[j+1]]]);
+      if(!g.fill(i+1,j)) edges.push([[g.xs[i+1],g.ys[j]],[g.xs[i+1],g.ys[j+1]]]);
+      if(!g.fill(i,j-1)) edges.push([[g.xs[i],g.ys[j]],[g.xs[i+1],g.ys[j]]]);
+      if(!g.fill(i,j+1)) edges.push([[g.xs[i],g.ys[j+1]],[g.xs[i+1],g.ys[j+1]]]);
+    }
+    return edges;
+  }
+  // 바깥에서 닿을 수 없는 빈칸 = 내부 구멍 (속 빈 파이프 판별)
+  function boxesHasHole(rects){
+    const g=boxGrid(rects); if(g.nx<=0||g.ny<=0) return false;
+    const seen={}, stack=[], key=function(i,j){return i+","+j;};
+    for(let i=0;i<g.nx;i++) for(let j=0;j<g.ny;j++){
+      if(!g.fill(i,j) && (i===0||j===0||i===g.nx-1||j===g.ny-1)){ seen[key(i,j)]=1; stack.push([i,j]); }
+    }
+    while(stack.length){
+      const c=stack.pop(), i=c[0], j=c[1];
+      [[i-1,j],[i+1,j],[i,j-1],[i,j+1]].forEach(function(n){
+        const a=n[0], b=n[1];
+        if(a>=0&&b>=0&&a<g.nx&&b<g.ny&&!seen[key(a,b)]&&!g.fill(a,b)){ seen[key(a,b)]=1; stack.push([a,b]); }
+      });
+    }
+    for(let i=0;i<g.nx;i++) for(let j=0;j<g.ny;j++){ if(!g.fill(i,j)&&!seen[key(i,j)]) return true; }
+    return false;
+  }
+  // 채워진 영역의 분리된 덩어리 수 (속 빈 파이프를 옆으로 자르면 벽이 두 덩어리)
+  function boxesComponents(rects){
+    const g=boxGrid(rects); if(g.nx<=0||g.ny<=0) return 0;
+    const seen={}, key=function(i,j){return i+","+j;}; let comp=0;
+    for(let i=0;i<g.nx;i++) for(let j=0;j<g.ny;j++){
+      if(!g.fill(i,j)||seen[key(i,j)]) continue;
+      comp++; const st=[[i,j]]; seen[key(i,j)]=1;
+      while(st.length){ const c=st.pop();
+        [[c[0]-1,c[1]],[c[0]+1,c[1]],[c[0],c[1]-1],[c[0],c[1]+1]].forEach(function(n){
+          if(n[0]>=0&&n[1]>=0&&n[0]<g.nx&&n[1]<g.ny&&!seen[key(n[0],n[1])]&&g.fill(n[0],n[1])){ seen[key(n[0],n[1])]=1; st.push(n); }
+        });
+      }
+    }
+    return comp;
+  }
+  function computeBoxesSection(part,axis,t){
+    const ax=otherAxes(axis), dim1=ax[0], dim2=ax[1];
+    const rects=[];
+    part.boxes.forEach(function(b){
+      if(t>=b[axis][0] && t<=b[axis][1]){
+        rects.push({a0:b[dim1][0],a1:b[dim1][1],b0:b[dim2][0],b1:b[dim2][1]});
+      }
+    });
+    const e1=boxesExtent(part,dim1), e2=boxesExtent(part,dim2);
+    return {mode:"boxRects", rects:rects, aLo:e1[0],aHi:e1[1], bLo:e2[0],bHi:e2[1],
+      hLabel:dim1.toUpperCase(), vLabel:dim2.toUpperCase()};
+  }
+  function computeSection(part,axis,t){
+    if(part.kind==="rect") return computeRectSection(part,axis,t);
+    if(part.kind==="boxes") return computeBoxesSection(part,axis,t);
+    return computeRoundSection(part,axis,t);
+  }
+  // 절단면 '너머로 보이는' 부품 전체 외형(투영). 절단 위치와 무관한
+  // 부품 전체 윤곽으로, 실제 잘린 단면보다 큰 부분이 '끝의 빠진 선'으로 나타난다.
+  // 절단면 전체와 똑같아 추가 표시가 필요 없으면 null.
+  function computeSilhouette(part,axis){
+    if(part.kind==="rect") return null;            // 블록 외곽선은 항상 완전히 그려짐
+    if(part.kind==="boxes"){
+      const ax=otherAxes(axis), d1=ax[0], d2=ax[1];
+      const e1=boxesExtent(part,d1), e2=boxesExtent(part,d2);
+      const rects=part.boxes.map(function(b){ return {a0:b[d1][0],a1:b[d1][1],b0:b[d2][0],b1:b[d2][1]}; });
+      return {mode:"boxRects", rects:rects, aLo:e1[0],aHi:e1[1],bLo:e2[0],bHi:e2[1]};
+    }
+    // round
+    if(axis===part.mainAxis){
+      const segs=part.segments;
+      if(segs.length<2) return null;               // 길이 방향 단면이 일정 → 추가선 없음
+      const sh=segs[0].shape;
+      if(sh==="circle"){
+        const outer=Math.max.apply(null,segs.map(function(s){return s.R;}));
+        const allH=segs.every(function(s){return s.Rin>0;});
+        const inner=allH?Math.min.apply(null,segs.map(function(s){return s.Rin;})):0;
+        return {mode:"roundCircle", shape:"circle", outer:outer, inner:inner};
+      }
+      if(sh==="rect"){
+        return {mode:"roundCircle", shape:"rect",
+          W:Math.max.apply(null,segs.map(function(s){return s.W;})),
+          H:Math.max.apply(null,segs.map(function(s){return s.H;}))};
+      }
+      return null;                                 // 육각 등 단일형
+    }
+    return computeRoundSection(part,axis,0);        // 교차 절단: 전체 측면 윤곽(t=0)
+  }
+
+  // =========================================================
+  // 단면도 종류 (온/반/부분/계단)
+  // =========================================================
+  const VIEW_TYPES=[
+    {id:"full",    label:"온단면도",   short:"전체를 잘라 안을 모두 드러냄",
+      why:"대칭·비대칭 상관없이 물체 전체를 한 평면으로 잘라 내부를 모두 보여줄 때."},
+    {id:"half",    label:"반단면도",   short:"절반은 단면, 절반은 외형(중심선 기준)",
+      why:"상하·좌우 대칭인 물체에서 한 번에 내부(단면)와 외형을 같이 보여줄 때."},
+    {id:"partial", label:"부분단면도", short:"필요한 곳만 파단선으로 국부적으로 잘라냄",
+      why:"물체의 일부 내부만 보고 싶을 때. 나머지는 외형으로 두고 파단선으로 경계 표시."},
+    {id:"offset",  label:"계단단면도", short:"절단선을 계단처럼 꺾어 여러 특징을 한 단면에",
+      why:"한 평면으로는 못 지나는 여러 구멍·특징을, 절단선을 꺾어 한 단면에 모을 때."}
+  ];
+  const VIEW_LABEL={}; VIEW_TYPES.forEach(v=> VIEW_LABEL[v.id]=v.label);
+
+  // 계단단면: 여러 구멍(보어)을 한 단면에 모은 것 — 각 보어를 '전체 지름'으로 펼침
+  function computeOffsetSection(part,axis){
+    const [dim1,dim2]=otherAxes(axis);
+    const axR = (dim1===part.boreAxis) ? dim2 : dim1;
+    const gaps = part.bores.map(function(b){ return {yc:boreCoord(b,axR), h:2*b.R}; });
+    return {mode:"rectBand", sizeB:partSizeAlong(part,part.boreAxis), sizeR:partSizeAlong(part,axR),
+      gaps:gaps, hLabel:part.boreAxis.toUpperCase(), vLabel:axR.toUpperCase(), offset:true};
+  }
+  // 주어진 부품·축·절단위치에서 사용 가능한 단면도 종류
+  function availableViews(part,axis,t){
+    const spec=computeSection(part,axis,t);
+    const av={full:true, half:false, partial:false, offset:false};
+    if(spec.mode==="rectCircles"){ av.half=spec.circles.length>0; av.partial=spec.circles.length>0; }
+    else if(spec.mode==="rectBand"){ av.half=spec.gaps.some(function(g){return g.h>0;}); }
+    else if(spec.mode==="roundCircle" && spec.shape==="circle"){ av.half=(spec.inner||0)>0; }
+    // 계단: 직육면체에 보어 2개 이상 & 보어축과 다른 방향으로 자를 때(슬롯이 하나씩만 보이는 경우)
+    if(part.kind==="rect" && part.bores.length>=2 && part.boreAxis!==axis) av.offset=true;
+    return av;
+  }
+  function isMatched(part,axis,t,tx){
+    const a=computeSection(part,axis,t), b=computeSection(part,axis,tx);
+    if(a.mode==="rectBand") return a.gaps.every((g,i)=> Math.abs(g.h-b.gaps[i].h)<0.10);
+    if(a.mode==="rectCircles") return true;
+    if(a.mode==="roundCircle"){
+      if(a.shape==="hex") return Math.abs(a.R-b.R)<0.06;
+      if(a.shape==="rect") return Math.abs(a.W-b.W)<0.10 && Math.abs(a.H-b.H)<0.10;
+      return Math.abs(a.outer-b.outer)<0.06 && Math.abs(a.inner-b.inner)<0.06;
+    }
+    if(a.mode==="boxRects"){
+      if(a.rects.length!==b.rects.length) return false;
+      const sig=function(s){ return s.rects.map(function(r){return [r.a0,r.a1,r.b0,r.b1];})
+        .sort(function(p,q){ return (p[0]-q[0])||(p[2]-q[2]); }); };
+      const sa=sig(a), sb=sig(b);
+      for(let i=0;i<sa.length;i++) for(let k=0;k<4;k++) if(Math.abs(sa[i][k]-sb[i][k])>0.10) return false;
+      return true;
+    }
+    if(a.rects.length!==b.rects.length) return false;
+    for(let i=0;i<a.rects.length;i++){
+      const ra=a.rects[i], rb=b.rects[i];
+      if(Math.abs(ra.mFrom-rb.mFrom)>0.01) return false;
+      if(ra.bands.length!==rb.bands.length) return false;
+      for(let k=0;k<ra.bands.length;k++){
+        if(Math.abs((ra.bands[k][1]-ra.bands[k][0])-(rb.bands[k][1]-rb.bands[k][0]))>0.10) return false;
+      }
+    }
+    return true;
+  }
+  function genericSampleX(part,axis){
+    if(part.kind==="rect"){
+      const ext=partSizeAlong(part,axis)/2;
+      if(part.boreAxis===axis){
+        const m=Math.min(0.4, ext*0.4);
+        return rand(-ext+m, ext-m);
+      }
+      const b=part.bores[Math.floor(Math.random()*part.bores.length)];
+      const u0=boreCoord(b,axis);
+      const lo=Math.max(-ext,u0-b.R*0.6), hi=Math.min(ext,u0+b.R*0.6);
+      return rand(lo,hi);
+    }
+    if(part.kind==="boxes"){
+      const e=boxesExtent(part,axis), m=Math.min(0.4,(e[1]-e[0])*0.2);
+      return rand(e[0]+m, e[1]-m);
+    }
+    if(axis===part.mainAxis){
+      const seg=part.segments[Math.floor(Math.random()*part.segments.length)];
+      const inset=Math.min(0.3,(seg.mTo-seg.mFrom)/4);
+      return rand(seg.mFrom+inset, seg.mTo-inset);
+    }
+    const maxR=Math.max.apply(null, part.segments.map(segHalfExtent));
+    return rand(-maxR*0.7, maxR*0.7);
+  }
+
+  // =========================================================
+  // 3D 장면
+  // =========================================================
+  const glCanvas=document.getElementById("gl");
+  const renderer=new THREE.WebGLRenderer({canvas:glCanvas,antialias:true});
+  renderer.setClearColor(0x0E1B2A,1);
+  const scene=new THREE.Scene();
+  const camera=new THREE.PerspectiveCamera(42,1,0.1,100);
+  let camDist=9;
+  scene.add(new THREE.AmbientLight(0xffffff,0.55));
+  const dirL=new THREE.DirectionalLight(0xcfeaff,0.9); dirL.position.set(5,8,6); scene.add(dirL);
+  const dirL2=new THREE.DirectionalLight(0xE8A13A,0.25); dirL2.position.set(-6,-2,-4); scene.add(dirL2);
+
+  const group=new THREE.Group();
+  group.rotation.set(-0.32,-0.6,0);
+  scene.add(group);
+  const partGroup=new THREE.Group();
+  group.add(partGroup);
+
+  function matBody(){ return new THREE.MeshStandardMaterial({color:0x9DB4C8,transparent:true,opacity:0.16,depthWrite:false,roughness:.9}); }
+  function matEdge(){ return new THREE.LineBasicMaterial({color:0x7FB6CC}); }
+  function matBore(){ return new THREE.MeshStandardMaterial({color:0x21384E,side:THREE.DoubleSide,transparent:true,opacity:0.6,roughness:.8}); }
+  function matRim(){ return new THREE.LineBasicMaterial({color:0x5BC8DE}); }
+
+  function clearGroup(g){
+    while(g.children.length){
+      const o=g.children.pop();
+      if(o.geometry) o.geometry.dispose();
+      if(o.material) o.material.dispose();
+    }
+  }
+  function orientAlongAxis(mesh,axis,offsets){
+    if(axis==="x") mesh.rotation.z=Math.PI/2;
+    else if(axis==="z") mesh.rotation.x=Math.PI/2;
+    mesh.position.set(offsets.x||0, offsets.y||0, offsets.z||0);
+  }
+  function orientRing(ring,axis,m){
+    if(axis==="z"){ ring.position.z=m; }
+    else if(axis==="x"){ ring.rotation.y=Math.PI/2; ring.position.x=m; }
+    else { ring.rotation.x=-Math.PI/2; ring.position.y=m; }
+  }
+
+  function buildRectPart(part){
+    const boxGeo=new THREE.BoxGeometry(part.sizeX,part.sizeY,part.sizeZ);
+    partGroup.add(new THREE.Mesh(boxGeo,matBody()));
+    partGroup.add(new THREE.LineSegments(new THREE.EdgesGeometry(boxGeo),matEdge()));
+    part.bores.forEach(b=>{
+      const [dimA,dimB]=otherAxes(b.axis);
+      const len=partSizeAlong(part,b.axis)+0.02;
+      const cyl=new THREE.Mesh(new THREE.CylinderGeometry(b.R,b.R,len,40,1,true), matBore());
+      orientAlongAxis(cyl,b.axis,{[dimA]:b.a0,[dimB]:b.b0});
+      partGroup.add(cyl);
+      const half=len/2-0.01;
+      [half,-half].forEach(d=>{
+        const pts=[];
+        for(let i=0;i<=48;i++){
+          const ang=i/48*Math.PI*2;
+          const pt=new THREE.Vector3();
+          pt[b.axis]=d; pt[dimA]=b.a0+Math.cos(ang)*b.R; pt[dimB]=b.b0+Math.sin(ang)*b.R;
+          pts.push(pt);
+        }
+        partGroup.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts), matRim()));
+      });
+    });
+  }
+  function buildRoundPart(part){
+    const [dimA,dimB]=otherAxes(part.mainAxis);
+    part.segments.forEach(seg=>{
+      const len=seg.mTo-seg.mFrom, cm=(seg.mFrom+seg.mTo)/2;
+      let geo;
+      if(seg.shape==="hex") geo=new THREE.CylinderGeometry(seg.R,seg.R,len,6);
+      else if(seg.shape==="rect"){ const d={x:0,y:0,z:0}; d[part.mainAxis]=len; d[dimA]=seg.W; d[dimB]=seg.H; geo=new THREE.BoxGeometry(d.x,d.y,d.z); }
+      else geo=new THREE.CylinderGeometry(seg.R,seg.R,len,40);
+
+      const mesh=new THREE.Mesh(geo,matBody());
+      const eLines=new THREE.LineSegments(new THREE.EdgesGeometry(geo),matEdge());
+      if(seg.shape==="rect"){ mesh.position[part.mainAxis]=cm; eLines.position[part.mainAxis]=cm; }
+      else { orientAlongAxis(mesh,part.mainAxis,{[part.mainAxis]:cm}); orientAlongAxis(eLines,part.mainAxis,{[part.mainAxis]:cm}); }
+      partGroup.add(mesh); partGroup.add(eLines);
+
+      if(seg.shape==="circle" && seg.Rin>0){
+        const inner=new THREE.Mesh(new THREE.CylinderGeometry(seg.Rin,seg.Rin,len+0.02,32,1,true), matBore());
+        orientAlongAxis(inner,part.mainAxis,{[part.mainAxis]:cm});
+        partGroup.add(inner);
+        [seg.mFrom,seg.mTo].forEach(d=>{
+          const pts=[];
+          for(let i=0;i<=48;i++){
+            const ang=i/48*Math.PI*2;
+            const pt=new THREE.Vector3();
+            pt[part.mainAxis]=d; pt[dimA]=Math.cos(ang)*seg.Rin; pt[dimB]=Math.sin(ang)*seg.Rin;
+            pts.push(pt);
+          }
+          partGroup.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts), matRim()));
+        });
+      }
+    });
+    for(let i=0;i<part.segments.length-1;i++){
+      const s1=part.segments[i], s2=part.segments[i+1];
+      if(s1.shape==="circle" && s2.shape==="circle" && Math.abs(s1.R-s2.R)>1e-6){
+        const ring=new THREE.Mesh(new THREE.RingGeometry(Math.min(s1.R,s2.R),Math.max(s1.R,s2.R),40),
+          new THREE.MeshStandardMaterial({color:0x9DB4C8,side:THREE.DoubleSide,transparent:true,opacity:0.5}));
+        orientRing(ring,part.mainAxis,s1.mTo);
+        partGroup.add(ring);
+      }
+    }
+  }
+  function buildBoxesPart(part){
+    part.boxes.forEach(b=>{
+      const sx=b.x[1]-b.x[0], sy=b.y[1]-b.y[0], sz=b.z[1]-b.z[0];
+      const cx=(b.x[0]+b.x[1])/2, cy=(b.y[0]+b.y[1])/2, cz=(b.z[0]+b.z[1])/2;
+      const geo=new THREE.BoxGeometry(sx,sy,sz);
+      const mesh=new THREE.Mesh(geo,matBody()); mesh.position.set(cx,cy,cz); partGroup.add(mesh);
+      const ed=new THREE.LineSegments(new THREE.EdgesGeometry(geo),matEdge()); ed.position.set(cx,cy,cz); partGroup.add(ed);
+    });
+  }
+  function rebuildPart(id){
+    clearGroup(partGroup);
+    const part=PARTS[id];
+    if(part.kind==="rect") buildRectPart(part);
+    else if(part.kind==="boxes") buildBoxesPart(part);
+    else buildRoundPart(part);
+  }
+
+  // 절단면 오버레이
+  const planeMesh=new THREE.Mesh(
+    new THREE.PlaneGeometry(4.6,3.6),
+    new THREE.MeshBasicMaterial({color:0xE8A13A,transparent:true,opacity:0.22,side:THREE.DoubleSide,depthWrite:false})
+  );
+  group.add(planeMesh);
+  const planeEdge=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(4.6,3.6)), new THREE.LineBasicMaterial({color:0xE8A13A}));
+  group.add(planeEdge);
+  const railLine=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-2,1.9,0),new THREE.Vector3(2,1.9,0)]),
+    new THREE.LineDashedMaterial({color:0x6E8398,dashSize:0.12,gapSize:0.08}));
+  railLine.computeLineDistances(); group.add(railLine);
+  const handle=new THREE.Mesh(new THREE.SphereGeometry(0.2,20,16), new THREE.MeshStandardMaterial({color:0xE8A13A,emissive:0x5a3c0a,roughness:.4}));
+  group.add(handle);
+
+  function setOverlayVisible(v){ planeMesh.visible=v; planeEdge.visible=v; railLine.visible=v; handle.visible=v; }
+
+  let currentAxis="x", cutPos=-1.4, currentPartId="hole1";
+
+  function setCutPos(val){
+    const mn=parseFloat(slider.min), mx=parseFloat(slider.max);
+    cutPos=Math.max(mn,Math.min(mx,val));
+    planeMesh.position.set(0,0,0); planeMesh.position[currentAxis]=cutPos;
+    planeEdge.position.copy(planeMesh.position);
+    const off=AXES[currentAxis].railOffset;
+    const hp={x:0,y:0,z:0}; hp[currentAxis]=cutPos; Object.assign(hp,off);
+    handle.position.set(hp.x,hp.y,hp.z);
+    slider.value=cutPos.toFixed(2);
+    updatePanel();
+  }
+  function refreshCuttingRig(){
+    const part=PARTS[currentPartId];
+    let ext;
+    if(part.kind==="rect") ext=partSizeAlong(part,currentAxis)/2;
+    else if(part.kind==="boxes"){ const e=boxesExtent(part,currentAxis); ext=Math.max(Math.abs(e[0]),Math.abs(e[1])); }
+    else ext=2;
+    slider.min=(-ext).toFixed(2); slider.max=ext.toFixed(2);
+
+    if(currentAxis==="x") planeMesh.rotation.set(0,Math.PI/2,0);
+    else if(currentAxis==="y") planeMesh.rotation.set(-Math.PI/2,0,0);
+    else planeMesh.rotation.set(0,0,0);
+    planeEdge.rotation.copy(planeMesh.rotation);
+
+    const off=AXES[currentAxis].railOffset;
+    const p1={x:0,y:0,z:0}, p2={x:0,y:0,z:0};
+    p1[currentAxis]=-ext; p2[currentAxis]=ext; Object.assign(p1,off); Object.assign(p2,off);
+    railLine.geometry.dispose();
+    railLine.geometry=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(p1.x,p1.y,p1.z),new THREE.Vector3(p2.x,p2.y,p2.z)]);
+    railLine.computeLineDistances();
+
+    setCutPos(cutPos);
+  }
+
+  // ---- 인터랙션 ----
+  const ray=new THREE.Raycaster(), ndc=new THREE.Vector2();
+  let dragging=null,lastX=0,lastY=0;
+  const activePointers=new Map();           // id -> {x,y} (멀티터치 추적)
+  let pinch=null;                           // {startDist, startCamDist}
+  function pointerNDC(e){ const r=glCanvas.getBoundingClientRect(); ndc.x=((e.clientX-r.left)/r.width)*2-1; ndc.y=-((e.clientY-r.top)/r.height)*2+1; }
+  function pinchDistance(){
+    const pts=[...activePointers.values()];
+    return Math.hypot(pts[0].x-pts[1].x, pts[0].y-pts[1].y);
+  }
+  glCanvas.addEventListener("pointerdown",e=>{
+    glCanvas.setPointerCapture(e.pointerId);
+    activePointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(activePointers.size===2){           // 두 손가락 → 핀치 확대/축소
+      dragging=null;
+      pinch={ startDist:Math.max(1,pinchDistance()), startCamDist:camDist };
+      return;
+    }
+    if(activePointers.size>2) return;
+    pointerNDC(e); ray.setFromCamera(ndc,camera);
+    let hit=[];
+    if(planeMesh.visible) hit=ray.intersectObjects([planeMesh,handle],false);
+    if(hit.length){ dragging="plane"; } else { dragging="rotate"; lastX=e.clientX; lastY=e.clientY; }
+  });
+  glCanvas.addEventListener("pointermove",e=>{
+    if(activePointers.has(e.pointerId)) activePointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(pinch && activePointers.size>=2){   // 핀치: 손가락을 벌리면 확대(거리 감소)
+      const d=pinchDistance();
+      if(d>0) camDist=Math.max(5,Math.min(16, pinch.startCamDist*(pinch.startDist/d)));
+      return;
+    }
+    if(!dragging) return;
+    if(dragging==="rotate"){
+      const dx=e.clientX-lastX, dy=e.clientY-lastY; lastX=e.clientX; lastY=e.clientY;
+      group.rotation.y+=dx*0.008; group.rotation.x+=dy*0.008;
+      group.rotation.x=Math.max(-1.2,Math.min(1.2,group.rotation.x));
+    } else {
+      pointerNDC(e); ray.setFromCamera(ndc,camera);
+      const axisVec=AXES[currentAxis].vec.clone().applyQuaternion(group.quaternion).normalize();
+      const fwd=new THREE.Vector3(); camera.getWorldDirection(fwd);
+      const normal=fwd.clone().addScaledVector(axisVec,-fwd.dot(axisVec));
+      if(normal.lengthSq()<1e-6) normal.set(0,1,0); else normal.normalize();
+      const localPt=new THREE.Vector3(0,0,0); localPt[currentAxis]=cutPos;
+      const planePoint=group.localToWorld(localPt.clone());
+      const mp=new THREE.Plane().setFromNormalAndCoplanarPoint(normal,planePoint);
+      const hitPt=new THREE.Vector3();
+      if(ray.ray.intersectPlane(mp,hitPt)){
+        const local=group.worldToLocal(hitPt.clone());
+        setCutPos(local[currentAxis]);
+      }
+    }
+  });
+  const endDrag=e=>{
+    if(e&&e.pointerId!=null) activePointers.delete(e.pointerId);
+    if(activePointers.size<2) pinch=null;
+    if(activePointers.size===0) dragging=null;
+  };
+  glCanvas.addEventListener("pointerup",endDrag);
+  glCanvas.addEventListener("pointercancel",endDrag);
+  glCanvas.addEventListener("wheel",e=>{ e.preventDefault(); camDist=Math.max(5,Math.min(16,camDist+Math.sign(e.deltaY)*0.6)); },{passive:false});
+
+  function resize3D(){
+    const r=glCanvas.getBoundingClientRect();
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+    renderer.setSize(r.width,r.height,false);
+    camera.aspect=r.width/Math.max(1,r.height);
+    camera.updateProjectionMatrix();
+  }
+  function animate(){ camera.position.set(0,0,camDist); camera.lookAt(0,0,0); renderer.render(scene,camera); requestAnimationFrame(animate); }
+
+  // =========================================================
+  // 2D 단면 그리기
+  // =========================================================
+  function fitCanvas(cv){
+    const r=cv.getBoundingClientRect(), dpr=Math.min(window.devicePixelRatio,2);
+    cv.width=Math.round(r.width*dpr); cv.height=Math.round(r.height*dpr);
+    const ctx=cv.getContext("2d"); ctx.setTransform(dpr,0,0,dpr,0,0);
+    return {ctx,w:r.width,h:r.height};
+  }
+  function hatchAndFill(ctx,w,h){
+    ctx.fillStyle="#E7DEC6"; ctx.fill("evenodd");
+    ctx.save(); ctx.clip("evenodd");
+    ctx.strokeStyle="rgba(150,110,40,.5)"; ctx.lineWidth=1;
+    for(let p=-h;p<w+h;p+=8){ ctx.beginPath(); ctx.moveTo(p,0); ctx.lineTo(p+h,h); ctx.stroke(); }
+    ctx.restore();
+  }
+
+  const PROJ_COLOR="#2F7DB5";   // 절단면 너머 외형선(투영) 색
+  function projDash(ctx){ ctx.save(); ctx.strokeStyle=PROJ_COLOR; ctx.lineWidth=1.5; ctx.setLineDash([5,3]); }
+
+  // =========================================================
+  // 단면도 종류 렌더링 (반/부분/계단) — 공통 지오메트리로 부분 클리핑
+  // =========================================================
+  const DARK="#1C3247";
+  function centerLineV(ctx,x,y1,y2){
+    ctx.save(); ctx.strokeStyle="#3a5570"; ctx.lineWidth=1; ctx.setLineDash([9,3,2,3]);
+    ctx.beginPath(); ctx.moveTo(x,y1); ctx.lineTo(x,y2); ctx.stroke(); ctx.restore();
+  }
+  function wavyBlobPath(ctx,cx,cy,rx,ry){
+    const N=44, k=Math.min(rx,ry)*0.12;
+    ctx.beginPath();
+    for(let i=0;i<=N;i++){
+      const a=i/N*Math.PI*2, wob=1+(k/Math.min(rx,ry))*Math.sin(a*7);
+      const x=cx+Math.cos(a)*rx*wob, y=cy+Math.sin(a)*ry*wob;
+      if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    }
+    ctx.closePath();
+  }
+  function offsetBadge(ctx,showText){
+    ctx.save(); const x=9,y=14;
+    ctx.strokeStyle="#C77B1F"; ctx.lineWidth=2; ctx.setLineDash([6,2,2,2]);
+    ctx.beginPath();
+    ctx.moveTo(x,y); ctx.lineTo(x+13,y); ctx.lineTo(x+13,y-6); ctx.lineTo(x+27,y-6); ctx.lineTo(x+27,y); ctx.lineTo(x+41,y);
+    ctx.stroke(); ctx.restore();
+    // 양끝 화살표(보는 방향)
+    ctx.save(); ctx.fillStyle="#C77B1F";
+    [[x,y,-1],[x+41,y,1]].forEach(function(p){ ctx.beginPath(); ctx.moveTo(p[0]-p[2]*0,p[1]); ctx.lineTo(p[0]+p[2]*4,p[1]+5); ctx.lineTo(p[0]+p[2]*4,p[1]-5); ctx.closePath(); ctx.fill(); });
+    ctx.restore();
+    if(showText){ ctx.fillStyle="#C77B1F"; ctx.font="bold 10px ui-monospace,monospace"; ctx.fillText("계단 절단선",x+50,y+3); }
+  }
+  // 지원 모드에서만 지오메트리 생성(반/부분/계단·plain full). 미지원 → null
+  function buildViewGeo(spec,w,h){
+    if(spec.mode==="rectCircles"){
+      const pad=16, s=Math.min((w-2*pad)/spec.w,(h-2*pad)/spec.h);
+      const rw=spec.w*s, rh=spec.h*s, ox=(w-rw)/2, oy=(h-rh)/2;
+      const toXY=(cx,cy)=>[ox+(cx+spec.w/2)*s, oy+(spec.h/2-cy)*s];
+      const holes=spec.circles.map(c=>{ const p=toXY(c.cx,c.cy); return {x:p[0],y:p[1],r:c.r*s}; });
+      return {
+        cx:ox+rw/2, cy:oy+rh/2, bbox:{x:ox,y:oy,w:rw,h:rh},
+        fillHatch(ctx){ ctx.beginPath(); ctx.rect(ox,oy,rw,rh); holes.forEach(hl=>{ ctx.moveTo(hl.x+hl.r,hl.y); ctx.arc(hl.x,hl.y,hl.r,0,Math.PI*2); }); hatchAndFill(ctx,w,h); },
+        strokeOuter(ctx){ ctx.strokeRect(ox,oy,rw,rh); },
+        strokeHoles(ctx,dashed){ ctx.save(); if(dashed) ctx.setLineDash([4,3]); holes.forEach(hl=>{ ctx.beginPath(); ctx.arc(hl.x,hl.y,hl.r,0,Math.PI*2); ctx.stroke(); }); ctx.restore(); },
+        blobs:holes.map(hl=>({x:hl.x,y:hl.y,rx:hl.r*1.5,ry:hl.r*1.5}))
+      };
+    }
+    if(spec.mode==="rectBand"){
+      const pad=16, s=Math.min((w-2*pad)/spec.sizeB,(h-2*pad)/spec.sizeR);
+      const rw=spec.sizeB*s, rh=spec.sizeR*s, ox=(w-rw)/2, oy=(h-rh)/2;
+      const Y=yw=>oy+(spec.sizeR/2-yw)*s;
+      const slots=spec.gaps.filter(g=>g.h>0).map(g=>({top:Y(g.yc+g.h/2),bot:Y(g.yc-g.h/2)}));
+      return {
+        cx:ox+rw/2, cy:oy+rh/2, bbox:{x:ox,y:oy,w:rw,h:rh},
+        fillHatch(ctx){ ctx.beginPath(); ctx.rect(ox,oy,rw,rh); slots.forEach(sl=> ctx.rect(ox,sl.top,rw,sl.bot-sl.top)); hatchAndFill(ctx,w,h); },
+        strokeOuter(ctx){ ctx.strokeRect(ox,oy,rw,rh); },
+        strokeHoles(ctx,dashed){ ctx.save(); if(dashed) ctx.setLineDash([4,3]); slots.forEach(sl=>{ [sl.top,sl.bot].forEach(yy=>{ ctx.beginPath(); ctx.moveTo(ox,yy); ctx.lineTo(ox+rw,yy); ctx.stroke(); }); }); ctx.restore(); },
+        blobs:[]
+      };
+    }
+    if(spec.mode==="roundCircle" && spec.shape==="circle"){
+      const pad=16, s=(Math.min(w,h)-2*pad)/(2*REF_R), cx=w/2, cy=h/2;
+      const oPx=spec.outer*s, iPx=(spec.inner||0)*s;
+      return {
+        cx:cx, cy:cy, bbox:{x:cx-oPx,y:cy-oPx,w:2*oPx,h:2*oPx},
+        fillHatch(ctx){ ctx.beginPath(); ctx.arc(cx,cy,oPx,0,Math.PI*2); if(iPx>0){ ctx.moveTo(cx+iPx,cy); ctx.arc(cx,cy,iPx,0,Math.PI*2); } hatchAndFill(ctx,w,h); },
+        strokeOuter(ctx){ ctx.beginPath(); ctx.arc(cx,cy,oPx,0,Math.PI*2); ctx.stroke(); },
+        strokeHoles(ctx,dashed){ if(iPx>0){ ctx.save(); if(dashed) ctx.setLineDash([4,3]); ctx.beginPath(); ctx.arc(cx,cy,iPx,0,Math.PI*2); ctx.stroke(); ctx.restore(); } },
+        blobs:[]
+      };
+    }
+    return null;
+  }
+  function drawSectionView(ctx,geo,vt,w,h,opts){
+    const paintCut=()=>{ geo.fillHatch(ctx); ctx.strokeStyle=DARK; ctx.lineWidth=2; geo.strokeOuter(ctx); geo.strokeHoles(ctx,false); };
+    const paintExt=()=>{ ctx.strokeStyle=DARK; ctx.lineWidth=2; geo.strokeOuter(ctx); geo.strokeHoles(ctx,true); };
+    if(vt==="half"){
+      const cx=geo.cx, bb=geo.bbox;
+      ctx.save(); ctx.beginPath(); ctx.rect(0,0,cx,h); ctx.clip(); paintCut(); ctx.restore();
+      ctx.save(); ctx.beginPath(); ctx.rect(cx,0,w-cx,h); ctx.clip(); paintExt(); ctx.restore();
+      centerLineV(ctx,cx,bb.y-8,bb.y+bb.h+8);
+    } else if(vt==="partial"){
+      paintExt();
+      const b=geo.blobs[0];
+      if(b){
+        ctx.save(); wavyBlobPath(ctx,b.x,b.y,b.rx,b.ry); ctx.clip();
+        geo.fillHatch(ctx); ctx.strokeStyle=DARK; ctx.lineWidth=2; geo.strokeHoles(ctx,false); ctx.restore();
+        ctx.strokeStyle=DARK; ctx.lineWidth=1.2; wavyBlobPath(ctx,b.x,b.y,b.rx,b.ry); ctx.stroke();
+      } else paintCut();
+    } else if(vt==="offset"){
+      paintCut();
+      offsetBadge(ctx, !!(opts&&opts.badgeText));
+    } else {
+      paintCut();   // full (plain)
+    }
+  }
+
+  function drawSection(cv, spec, opts){
+    opts=opts||{};
+    const sil=opts.silhouette;
+    const {ctx,w,h}=fitCanvas(cv);
+    ctx.clearRect(0,0,w,h);
+
+    // 단면도 종류(반/부분/계단 또는 plain full) — 지원 모드면 전용 렌더러로
+    if(opts.viewType && (opts.viewType!=="full" || opts.plain)){
+      const geo=buildViewGeo(spec,w,h);
+      if(geo){ drawSectionView(ctx,geo,opts.viewType,w,h,opts); return; }
+    }
+
+    if(spec.mode==="rectBand"){
+      const pad=16, s=Math.min((w-2*pad)/spec.sizeB,(h-2*pad)/spec.sizeR);
+      const rw=spec.sizeB*s, rh=spec.sizeR*s, ox=(w-rw)/2, oy=(h-rh)/2;
+      const Y=yw=>oy+(spec.sizeR/2-yw)*s;
+      const iv=spec.gaps.filter(g=>g.h>0).map(g=>[g.yc-g.h/2,g.yc+g.h/2]).sort((a,b)=>a[0]-b[0]);
+      let bands=[],cursor=-spec.sizeR/2;
+      iv.forEach(([lo,hi])=>{ if(lo>cursor) bands.push([cursor,lo]); cursor=Math.max(cursor,hi); });
+      if(cursor<spec.sizeR/2) bands.push([cursor,spec.sizeR/2]);
+      bands.forEach(([yb,yt])=>{ ctx.beginPath(); ctx.rect(ox,Y(yt),rw,Y(yb)-Y(yt)); hatchAndFill(ctx,w,h); });
+      ctx.strokeStyle="#1C3247"; ctx.lineWidth=2; ctx.strokeRect(ox,oy,rw,rh);
+      if(opts.targetGaps && !opts.matched){
+        ctx.save(); ctx.strokeStyle="#C77B1F"; ctx.lineWidth=1.5; ctx.setLineDash([6,4]);
+        opts.targetGaps.filter(g=>g.h>0).forEach(g=>{
+          [g.yc-g.h/2,g.yc+g.h/2].forEach(yy=>{ const cy=Y(yy); ctx.beginPath(); ctx.moveTo(ox,cy); ctx.lineTo(ox+rw,cy); ctx.stroke(); });
+        });
+        ctx.restore();
+      }
+      spec.gaps.filter(g=>g.h>0).forEach(g=>{
+        ctx.strokeStyle=opts.matched?"#2f9e6e":"#1C3247"; ctx.lineWidth=2;
+        [g.yc-g.h/2,g.yc+g.h/2].forEach(yy=>{ const cy=Y(yy); ctx.beginPath(); ctx.moveTo(ox,cy); ctx.lineTo(ox+rw,cy); ctx.stroke(); });
+      });
+      ctx.fillStyle="#5b7286"; ctx.font="10px ui-monospace,monospace";
+      ctx.fillText(spec.hLabel+"→",ox+2,oy+rh+12);
+      ctx.save(); ctx.translate(ox-3,oy+rh-2); ctx.rotate(-Math.PI/2); ctx.fillText(spec.vLabel+"→",0,0); ctx.restore();
+
+    } else if(spec.mode==="rectCircles"){
+      const pad=16, s=Math.min((w-2*pad)/spec.w,(h-2*pad)/spec.h);
+      const rw=spec.w*s, rh=spec.h*s, ox=(w-rw)/2, oy=(h-rh)/2;
+      const toXY=(cx,cy)=>[ox+(cx+spec.w/2)*s, oy+(spec.h/2-cy)*s];
+      ctx.beginPath(); ctx.rect(ox,oy,rw,rh);
+      spec.circles.forEach(c=>{ const [ccx,ccy]=toXY(c.cx,c.cy); ctx.moveTo(ccx+c.r*s,ccy); ctx.arc(ccx,ccy,c.r*s,0,Math.PI*2); });
+      hatchAndFill(ctx,w,h);
+      ctx.strokeStyle="#1C3247"; ctx.lineWidth=2; ctx.strokeRect(ox,oy,rw,rh);
+      spec.circles.forEach(c=>{ const [ccx,ccy]=toXY(c.cx,c.cy); ctx.beginPath(); ctx.arc(ccx,ccy,c.r*s,0,Math.PI*2); ctx.stroke(); });
+      if(opts.targetSpec && opts.targetSpec.mode==="rectCircles" && !opts.matched){
+        ctx.save(); ctx.strokeStyle="#C77B1F"; ctx.lineWidth=1.5; ctx.setLineDash([6,4]);
+        opts.targetSpec.circles.forEach(c=>{ const [ccx,ccy]=toXY(c.cx,c.cy); ctx.beginPath(); ctx.arc(ccx,ccy,c.r*s,0,Math.PI*2); ctx.stroke(); });
+        ctx.restore();
+      }
+      ctx.fillStyle="#5b7286"; ctx.font="10px ui-monospace,monospace";
+      ctx.fillText(spec.hLabel+"→",ox+2,oy+rh+12);
+
+    } else if(spec.mode==="roundCircle"){
+      if(spec.shape==="hex"){
+        const pad=16, s=(Math.min(w,h)-2*pad)/(2*REF_R), cx=w/2, cy=h/2;
+        const pts=[]; for(let i=0;i<6;i++){ const ang=i*Math.PI/3; pts.push([cx+spec.R*s*Math.cos(ang), cy-spec.R*s*Math.sin(ang)]); }
+        ctx.beginPath(); ctx.moveTo(pts[0][0],pts[0][1]); for(let i=1;i<6;i++) ctx.lineTo(pts[i][0],pts[i][1]); ctx.closePath();
+        hatchAndFill(ctx,w,h);
+        ctx.strokeStyle="#1C3247"; ctx.lineWidth=2; ctx.stroke();
+      } else if(spec.shape==="rect"){
+        const pad=16, s=(Math.min(w,h)-2*pad)/(2*REF_R);   // 고정 배율: 단 크기 비교 가능
+        const rw=spec.W*s, rh=spec.H*s, ox=(w-rw)/2, oy=(h-rh)/2;
+        if(sil && sil.shape==="rect"){
+          const sw=sil.W*s, sh2=sil.H*s;
+          projDash(ctx); ctx.strokeRect((w-sw)/2,(h-sh2)/2,sw,sh2); ctx.restore();
+        }
+        ctx.beginPath(); ctx.rect(ox,oy,rw,rh); hatchAndFill(ctx,w,h);
+        ctx.strokeStyle="#1C3247"; ctx.lineWidth=2; ctx.strokeRect(ox,oy,rw,rh);
+      } else {
+        const pad=16, s=(Math.min(w,h)-2*pad)/(2*REF_R), cx=w/2, cy=h/2;
+        const oPx=spec.outer*s, iPx=spec.inner*s;
+        if(sil && sil.shape==="circle"){
+          projDash(ctx);
+          ctx.beginPath(); ctx.arc(cx,cy,sil.outer*s,0,Math.PI*2); ctx.stroke();
+          if(sil.inner>0){ ctx.beginPath(); ctx.arc(cx,cy,sil.inner*s,0,Math.PI*2); ctx.stroke(); }
+          ctx.restore();
+        }
+        ctx.beginPath(); ctx.arc(cx,cy,oPx,0,Math.PI*2);
+        if(spec.inner>0){ ctx.moveTo(cx+iPx,cy); ctx.arc(cx,cy,iPx,0,Math.PI*2); }
+        hatchAndFill(ctx,w,h);
+        ctx.strokeStyle="#1C3247"; ctx.lineWidth=2;
+        ctx.beginPath(); ctx.arc(cx,cy,oPx,0,Math.PI*2); ctx.stroke();
+        if(spec.inner>0){ ctx.strokeStyle=opts.matched?"#2f9e6e":"#1C3247"; ctx.beginPath(); ctx.arc(cx,cy,iPx,0,Math.PI*2); ctx.stroke(); }
+        if(opts.targetSpec && opts.targetSpec.mode==="roundCircle" && opts.targetSpec.shape==="circle" && !opts.matched){
+          ctx.save(); ctx.strokeStyle="#C77B1F"; ctx.lineWidth=1.5; ctx.setLineDash([6,4]);
+          ctx.beginPath(); ctx.arc(cx,cy,opts.targetSpec.outer*s,0,Math.PI*2); ctx.stroke();
+          if(opts.targetSpec.inner>0){ ctx.beginPath(); ctx.arc(cx,cy,opts.targetSpec.inner*s,0,Math.PI*2); ctx.stroke(); }
+          ctx.restore();
+        }
+      }
+
+    } else if(spec.mode==="roundBands"){
+      const pad=16, s=Math.min((w-2*pad)/4,(h-2*pad)/(2*REF_R));
+      const ox=(w-4*s)/2, oy=(h-2*REF_R*s)/2;
+      const X=m=>ox+(m+2)*s, Y=q=>oy+(REF_R-q)*s;
+      if(sil && sil.mode==="roundBands"){
+        projDash(ctx);
+        sil.rects.forEach(r=>{ r.bands.forEach(([lo,hi])=>{ ctx.strokeRect(X(r.mFrom),Y(hi),X(r.mTo)-X(r.mFrom),Y(lo)-Y(hi)); }); });
+        ctx.restore();
+      }
+      spec.rects.forEach(r=>{
+        r.bands.forEach(([lo,hi])=>{ ctx.beginPath(); ctx.rect(X(r.mFrom),Y(hi),X(r.mTo)-X(r.mFrom),Y(lo)-Y(hi)); hatchAndFill(ctx,w,h); });
+      });
+      ctx.strokeStyle="#1C3247"; ctx.lineWidth=2;
+      spec.rects.forEach(r=>{ r.bands.forEach(([lo,hi])=>{ ctx.strokeRect(X(r.mFrom),Y(hi),X(r.mTo)-X(r.mFrom),Y(lo)-Y(hi)); }); });
+      ctx.fillStyle="#5b7286"; ctx.font="10px ui-monospace,monospace";
+      ctx.fillText(spec.mainLabel+"→",ox+2,oy+2*REF_R*s+12);
+
+    } else if(spec.mode==="boxRects"){
+      const pad=16, W=Math.max(0.001,spec.aHi-spec.aLo), H=Math.max(0.001,spec.bHi-spec.bLo);
+      const s=Math.min((w-2*pad)/W,(h-2*pad)/H);
+      const rw=W*s, rh=H*s, ox=(w-rw)/2, oy=(h-rh)/2;
+      const X=a=>ox+(a-spec.aLo)*s, Y=b=>oy+(spec.bHi-b)*s;
+      if(sil && sil.mode==="boxRects"){
+        projDash(ctx); ctx.beginPath();
+        rectUnionEdges(sil.rects).forEach(e=>{ ctx.moveTo(X(e[0][0]),Y(e[0][1])); ctx.lineTo(X(e[1][0]),Y(e[1][1])); });
+        ctx.stroke(); ctx.restore();
+      }
+      spec.rects.forEach(r=>{ ctx.beginPath(); ctx.rect(X(r.a0),Y(r.b1),(r.a1-r.a0)*s,(r.b1-r.b0)*s); hatchAndFill(ctx,w,h); });
+      ctx.strokeStyle="#1C3247"; ctx.lineWidth=2; ctx.beginPath();
+      rectUnionEdges(spec.rects).forEach(e=>{ ctx.moveTo(X(e[0][0]),Y(e[0][1])); ctx.lineTo(X(e[1][0]),Y(e[1][1])); });
+      ctx.stroke();
+      ctx.fillStyle="#5b7286"; ctx.font="10px ui-monospace,monospace";
+      ctx.fillText(spec.hLabel+"→",ox+2,oy+rh+12);
+      ctx.save(); ctx.translate(ox-3,oy+rh-2); ctx.rotate(-Math.PI/2); ctx.fillText(spec.vLabel+"→",0,0); ctx.restore();
+    }
+  }
+
+  // =========================================================
+  // 아이콘 (탐정 모드 선택지)
+  // =========================================================
+  function roundRectPath(ctx,x,y,w,h,r){
+    ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
+  }
+  function dashedCircle(ctx,cx,cy,r){
+    ctx.save(); ctx.setLineDash([2,2]); ctx.strokeStyle="#5b7286"; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.stroke(); ctx.restore();
+  }
+  function drawIcon(cv,id){
+    cv.width=40; cv.height=40;
+    const ctx=cv.getContext("2d");
+    ctx.clearRect(0,0,40,40);
+    ctx.strokeStyle="#1C3247"; ctx.fillStyle="#E7DEC6"; ctx.lineWidth=2;
+    if(id==="hole1"){ roundRectPath(ctx,5,7,30,26,3); ctx.fill(); ctx.stroke(); dashedCircle(ctx,20,20,6); }
+    else if(id==="hole2"){ roundRectPath(ctx,5,7,30,26,3); ctx.fill(); ctx.stroke(); dashedCircle(ctx,14,15,4.5); dashedCircle(ctx,26,25,4.5); }
+    else if(id==="holeX"){ roundRectPath(ctx,5,7,30,26,3); ctx.fill(); ctx.stroke(); dashedCircle(ctx,20,20,6);
+      ctx.strokeStyle="#5b7286"; ctx.beginPath(); ctx.moveTo(1,20); ctx.lineTo(6,20); ctx.stroke(); }
+    else if(id==="pin"){ roundRectPath(ctx,14,5,12,30,4); ctx.fill(); ctx.stroke(); }
+    else if(id==="shaft"){ ctx.beginPath(); ctx.rect(4,7,17,26); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.rect(21,13,15,14); ctx.fill(); ctx.stroke(); }
+    else if(id==="bushing"){ roundRectPath(ctx,4,11,32,18,4); ctx.fill(); ctx.stroke(); ctx.save(); ctx.setLineDash([3,2]); ctx.strokeRect(4,17,32,7); ctx.restore(); }
+    else if(id==="hexHead"){
+      ctx.beginPath();
+      for(let i=0;i<6;i++){ const ang=i*Math.PI/3 - Math.PI/2; const px=20+13*Math.cos(ang), py=20+13*Math.sin(ang); if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py); }
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
+    else if(id==="stepBlock"){
+      ctx.beginPath(); ctx.rect(4,20,10,14); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.rect(15,12,10,22); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.rect(26,4,10,30); ctx.fill(); ctx.stroke();
+    }
+    else if(id==="lbracket"){
+      ctx.beginPath();
+      ctx.moveTo(9,5); ctx.lineTo(18,5); ctx.lineTo(18,26); ctx.lineTo(35,26); ctx.lineTo(35,35); ctx.lineTo(9,35); ctx.closePath();
+      ctx.fill(); ctx.stroke();
+    }
+    else if(id==="squarePipe"){
+      ctx.beginPath(); ctx.rect(6,8,28,24); ctx.rect(14,15,12,10); ctx.fill("evenodd");
+      ctx.beginPath(); ctx.rect(6,8,28,24); ctx.stroke();
+      ctx.beginPath(); ctx.rect(14,15,12,10); ctx.stroke();
+    }
+  }
+
+  // =========================================================
+  // 상태 / 모드
+  // =========================================================
+  const slider=document.getElementById("slider");
+  const posOut=document.getElementById("posOut");
+  const stateOut=document.getElementById("stateOut");
+  const sectionCv=document.getElementById("section");
+  const partRow=document.getElementById("partRow");
+  const axisBtns=document.getElementById("axisBtns");
+  const axisDesc=document.getElementById("axisDesc");
+  const controlRow=document.getElementById("controlRow");
+  const readoutRow=document.getElementById("readoutRow");
+  const matchPanel=document.getElementById("matchPanel");
+  const detectPanel=document.getElementById("detectPanel");
+  const typePanel=document.getElementById("typePanel");
+  const mysteryOverlay=document.getElementById("mysteryOverlay");
+  const viewRow=document.getElementById("viewRow");
+  const viewBtnsEl=document.getElementById("viewBtns");
+  const viewDesc=document.getElementById("viewDesc");
+
+  let mode="free";
+  let currentViewType="full";   // 자유 탐색에서 선택한 단면도 종류
+
+  PART_GROUPS.forEach(g=>{
+    const wrap=document.createElement("div"); wrap.className="partgroup";
+    const lab=document.createElement("div"); lab.className="partgroup-label"; lab.innerHTML="<b>·</b> "+g.name;
+    wrap.appendChild(lab);
+    const row=document.createElement("div"); row.className="partrow-inner";
+    g.ids.forEach(id=>{
+      const b=document.createElement("button");
+      b.className="tab pill"; b.type="button"; b.textContent=PARTS[id].label; b.dataset.id=id;
+      b.addEventListener("click",()=>{ if(mode==="free") setPart(id); });
+      row.appendChild(b);
+    });
+    wrap.appendChild(row); partRow.appendChild(wrap);
+  });
+  function highlightPartRow(id){ partRow.querySelectorAll(".pill").forEach(b=> b.setAttribute("aria-pressed", b.dataset.id===id)); }
+
+  ["x","y","z"].forEach(ax=>{
+    const b=document.createElement("button");
+    b.className="axisBtn"; b.type="button"; b.textContent=AXES[ax].label; b.dataset.axis=ax;
+    b.addEventListener("click",()=> setAxis(ax));
+    axisBtns.appendChild(b);
+  });
+  function highlightAxisRow(ax){ axisBtns.querySelectorAll(".axisBtn").forEach(b=> b.setAttribute("aria-pressed", b.dataset.axis===ax)); }
+
+  // ---- 단면도 종류 토글 (자유 탐색) ----
+  VIEW_TYPES.forEach(v=>{
+    const b=document.createElement("button");
+    b.className="viewBtn"; b.type="button"; b.textContent=v.label; b.dataset.view=v.id;
+    b.addEventListener("click",()=>{ if(!b.disabled){ currentViewType=v.id; updatePanel(); } });
+    viewBtnsEl.appendChild(b);
+  });
+  // 현재 부품·축·위치에서 가능한 종류만 활성화하고, 불가능하면 온단면도로 되돌림
+  function refreshViewButtons(){
+    const av=availableViews(PARTS[currentPartId],currentAxis,cutPos);
+    if(!av[currentViewType]) currentViewType="full";
+    viewBtnsEl.querySelectorAll(".viewBtn").forEach(b=>{
+      b.disabled=!av[b.dataset.view];
+      b.setAttribute("aria-pressed", b.dataset.view===currentViewType);
+    });
+    const v=VIEW_TYPES.find(x=>x.id===currentViewType);
+    viewDesc.textContent=v.label+" — "+v.short;
+  }
+
+  function setPart(id){
+    currentPartId=id;
+    rebuildPart(id);
+    highlightPartRow(id);
+    refreshCuttingRig();
+  }
+  function setAxis(ax){
+    currentAxis=ax;
+    highlightAxisRow(ax);
+    axisDesc.textContent=AXES[ax].desc;
+    if(mode==="match"){ newMatchRound(); }
+    else if(mode==="detect"){
+      // 방향만 바꿈 — 같은 문제(정답)를 유지한 채 새 방향 단면만 다시 그린다
+      if(detectState.answered){ cutPos=detectState.pos[currentAxis]; refreshCuttingRig(); }
+      else { drawDetectSection(); }
+    }
+    else { refreshCuttingRig(); }
+  }
+
+  function updatePanel(){
+    const part=PARTS[currentPartId];
+    posOut.textContent="x = "+cutPos.toFixed(2)+"  ("+currentAxis.toUpperCase()+"축)";
+    const spec=computeSection(part,currentAxis,cutPos);
+    // 절단면이 부품을 전혀 지나지 않는 위치 — 실제로 잘린 곳이 없으므로 투상도(외형선)만 보여준다
+    const outside=(spec.mode==="roundBands"||spec.mode==="boxRects") && spec.rects.length===0;
+    let open=false;
+    if(spec.mode==="rectBand") open=spec.gaps.some(g=>g.h>0);
+    else if(spec.mode==="rectCircles") open=true;
+    else if(spec.mode==="roundCircle") open=(spec.inner||0)>0;
+    else if(spec.mode==="roundBands") open=spec.rects.some(r=>r.bands.length>1);
+    else if(spec.mode==="boxRects") open=boxesHasHole(spec.rects) || boxesComponents(spec.rects)>1;
+    if(outside){
+      stateOut.className="state outside";
+      stateOut.textContent="바깥 — 투상도 (절단 없음)";
+    } else {
+      stateOut.className=open?"state bore":"state solid";
+      stateOut.textContent=open?"구멍/보링 통과":"솔리드 단면";
+    }
+
+    let drawSpec=spec, opts={};
+    if(mode==="free"){
+      refreshViewButtons();
+      if(currentViewType==="offset"){ drawSpec=computeOffsetSection(part,currentAxis); opts.viewType="offset"; opts.badgeText=true; }
+      else if(currentViewType!=="full"){ opts.viewType=currentViewType; }
+      else { opts.silhouette=computeSilhouette(part,currentAxis); }
+    } else {
+      opts.silhouette=computeSilhouette(part,currentAxis);
+    }
+    if(mode==="match" && matchState.targetX!=null){
+      opts.matched=matchState.matched;
+      const tSpec=computeSection(part,currentAxis,matchState.targetX);
+      if(tSpec.mode==="rectBand") opts.targetGaps=tSpec.gaps;
+      else opts.targetSpec=tSpec;
+    }
+    drawSection(sectionCv, drawSpec, opts);
+    if(mode==="match") checkMatch();
+  }
+  slider.addEventListener("input",()=> setCutPos(parseFloat(slider.value)) );
+
+  // ---- 매칭 ----
+  const matchState={round:1,score:0,targetX:null,matched:false};
+  const roundOut=document.getElementById("roundOut"), scoreOut=document.getElementById("scoreOut");
+  const toast=document.getElementById("toast"), nextBtn=document.getElementById("nextBtn");
+  const targetCv=document.getElementById("targetCanvas"), matchTitle=document.getElementById("matchTitle");
+
+  function eligiblePool(){
+    const e=PART_ORDER.filter(id=> !isAxisTrivial(PARTS[id],currentAxis));
+    return e.length? e : PART_ORDER;
+  }
+  function newMatchRound(){
+    const pool=eligiblePool();
+    const id=pool[Math.floor(Math.random()*pool.length)];
+    setPart(id);
+    const part=PARTS[id];
+    matchState.targetX=genericSampleX(part,currentAxis);
+    matchState.matched=false;
+    nextBtn.style.display="none";
+    matchTitle.textContent="“"+part.label+"” 단면 맞추기";
+    toast.className="toast go"; toast.textContent="목표 단면에 맞춰 절단면을 움직여 보세요.";
+    drawSection(targetCv, computeSection(part,currentAxis,matchState.targetX), {silhouette:computeSilhouette(part,currentAxis)});
+    updatePanel();
+  }
+  function checkMatch(){
+    if(matchState.matched) return;
+    const part=PARTS[currentPartId];
+    if(isMatched(part,currentAxis,cutPos,matchState.targetX)){
+      matchState.matched=true; matchState.score++;
+      scoreOut.textContent=matchState.score;
+      stateOut.className="state match"; stateOut.textContent="일치! ✔";
+      const tSpec=computeSection(part,currentAxis,matchState.targetX);
+      drawSection(sectionCv, computeSection(part,currentAxis,cutPos), {matched:true,
+        silhouette:computeSilhouette(part,currentAxis),
+        targetGaps:tSpec.mode==="rectBand"?tSpec.gaps:undefined,
+        targetSpec:tSpec.mode!=="rectBand"?tSpec:undefined});
+      if(matchState.round>=5){
+        toast.className="toast ok"; toast.textContent="5문제 완료! 정답 "+matchState.score+" / 5 — 잘했어요.";
+        nextBtn.textContent="다시 도전";
+      } else {
+        toast.className="toast ok"; toast.textContent="정답! 다음엔 다른 부품이 나와요.";
+        nextBtn.textContent="다음 문제";
+      }
+      nextBtn.style.display="inline-block";
+    }
+  }
+  nextBtn.addEventListener("click",()=>{
+    if(matchState.round>=5){ matchState.round=1; matchState.score=0; scoreOut.textContent=0; }
+    else matchState.round++;
+    roundOut.textContent=matchState.round;
+    newMatchRound();
+  });
+  document.getElementById("restartBtn").addEventListener("click",()=>{
+    matchState.round=1; matchState.score=0; roundOut.textContent=1; scoreOut.textContent=0; newMatchRound();
+  });
+
+  // ---- 탐정 ----
+  const detectState={round:1,score:0,partId:null,pos:null,x:null,answered:false};
+  const roundOutD=document.getElementById("roundOutD"), scoreOutD=document.getElementById("scoreOutD");
+  const toastD=document.getElementById("toastD"), nextDetectBtn=document.getElementById("nextDetectBtn");
+  const choicesEl=document.getElementById("choices");
+
+  // 같은 문제(정답 부품)를 유지한 채 현재 축 방향 단면만 다시 그린다
+  function drawDetectSection(){
+    const part=PARTS[detectState.partId];
+    detectState.x=detectState.pos[currentAxis];
+    drawSection(sectionCv, computeSection(part,currentAxis,detectState.x), {silhouette:computeSilhouette(part,currentAxis)});
+  }
+  function newDetectRound(){
+    const pool=eligiblePool();
+    const id=pool[Math.floor(Math.random()*pool.length)];
+    const part=PARTS[id];
+    detectState.partId=id;
+    // 세 방향의 절단 위치를 문제 생성 시 한 번만 정해 둔다 — 축을 오가도 단면이 일관되게 유지됨
+    detectState.pos={ x:genericSampleX(part,"x"), y:genericSampleX(part,"y"), z:genericSampleX(part,"z") };
+    detectState.answered=false;
+    mysteryOverlay.classList.remove("hidden");
+    setOverlayVisible(false);
+    clearGroup(partGroup);
+    drawDetectSection();
+    nextDetectBtn.style.display="none";
+    toastD.className="toast go"; toastD.textContent="단면을 살펴보고 골라보세요. 절단 방향(X·Y·Z)을 바꿔 여러 방향에서 확인할 수 있어요.";
+    roundOutD.textContent=detectState.round; scoreOutD.textContent=detectState.score;
+    choicesEl.innerHTML="";
+    shuffle(PART_ORDER.slice()).forEach(cid=>{
+      const btn=document.createElement("button");
+      btn.className="choice"; btn.type="button"; btn.dataset.id=cid;
+      const cv=document.createElement("canvas"); btn.appendChild(cv);
+      const lab=document.createElement("span"); lab.textContent=PARTS[cid].label; btn.appendChild(lab);
+      btn.addEventListener("click",()=> onDetectChoice(cid));
+      choicesEl.appendChild(btn);
+      drawIcon(cv,cid);
+    });
+  }
+  // 선택한 부품을 3D + 단면으로 불러와 비교해서 볼 수 있게 한다
+  function viewComparePart(id){
+    setOverlayVisible(true);
+    currentPartId=id;
+    rebuildPart(id);
+    refreshCuttingRig();
+    setCutPos(detectState.pos[currentAxis]);
+    choicesEl.querySelectorAll(".choice").forEach(btn=> btn.classList.toggle("viewing", btn.dataset.id===id));
+  }
+  function onDetectChoice(chosenId){
+    if(!detectState.answered){
+      // 첫 클릭 = 정답 제출
+      detectState.answered=true;
+      const correct = chosenId===detectState.partId;
+      if(correct){ detectState.score++; scoreOutD.textContent=detectState.score; }
+      choicesEl.querySelectorAll(".choice").forEach(btn=>{
+        if(btn.dataset.id===detectState.partId) btn.classList.add("correct");
+        else if(btn.dataset.id===chosenId) btn.classList.add("wrong");
+      });
+      toastD.className=correct?"toast ok":"toast go";
+      toastD.textContent=(correct?"정답이에요! ":"아쉬워요 — 정답은 “"+PARTS[detectState.partId].label+"”. ")
+        +"다른 부품을 눌러 3D로 비교해 보세요.";
+      mysteryOverlay.classList.add("hidden");
+      nextDetectBtn.style.display="inline-block";
+      viewComparePart(detectState.partId);   // 먼저 정답 부품을 3D로 보여줌
+    } else {
+      // 정답 공개 후 = 비교 보기 (오답 모델도 3D로 확인)
+      viewComparePart(chosenId);
+    }
+  }
+  nextDetectBtn.addEventListener("click",()=>{
+    if(detectState.round>=5){ detectState.round=1; detectState.score=0; }
+    else detectState.round++;
+    newDetectRound();
+  });
+  document.getElementById("restartDetectBtn").addEventListener("click",()=>{ detectState.round=1; detectState.score=0; newDetectRound(); });
+
+  // ---- 단면 종류 맞히기 ----
+  // 각 종류가 뚜렷하게 그려지는 (부품·축·위치) 조합만 골라 출제
+  const TYPE_QUESTIONS=[
+    {type:"full",    part:"holeX",   axis:"y", pos:0},
+    {type:"full",    part:"bushing", axis:"x", pos:0},
+    {type:"full",    part:"hole1",   axis:"z", pos:0},
+    {type:"half",    part:"hole1",   axis:"z", pos:0},
+    {type:"half",    part:"bushing", axis:"x", pos:0},
+    {type:"half",    part:"hole1",   axis:"x", pos:0},
+    {type:"partial", part:"hole1",   axis:"z", pos:0},
+    {type:"partial", part:"hole2",   axis:"z", pos:0},
+    {type:"offset",  part:"hole2",   axis:"x", pos:0},
+    {type:"offset",  part:"hole2",   axis:"y", pos:0}
+  ];
+  const typeState={round:1,score:0,q:null,answered:false};
+  const roundOutT=document.getElementById("roundOutT"), scoreOutT=document.getElementById("scoreOutT");
+  const toastT=document.getElementById("toastT"), nextTypeBtn=document.getElementById("nextTypeBtn");
+  const typeChoicesEl=document.getElementById("typeChoices");
+
+  function drawTypeQuestion(){
+    const q=typeState.q, part=PARTS[q.part];
+    currentPartId=q.part; currentAxis=q.axis; cutPos=q.pos;
+    highlightAxisRow(q.axis); axisDesc.textContent=AXES[q.axis].desc;
+    rebuildPart(q.part);            // 부품은 3D로 보여주되
+    setOverlayVisible(false);       // 절단면(주황 평면)은 숨김 — 종류는 도면 기법 문제
+    const spec = q.type==="offset" ? computeOffsetSection(part,q.axis) : computeSection(part,q.axis,q.pos);
+    drawSection(sectionCv, spec, {plain:true, viewType:q.type});
+  }
+  function newTypeRound(){
+    let pick; do { pick=TYPE_QUESTIONS[Math.floor(Math.random()*TYPE_QUESTIONS.length)]; }
+    while(typeState.q && pick===typeState.q && TYPE_QUESTIONS.length>1);
+    typeState.q=pick; typeState.answered=false;
+    drawTypeQuestion();
+    nextTypeBtn.style.display="none";
+    toastT.className="toast go"; toastT.textContent="단면도를 살펴보고 종류를 골라보세요.";
+    roundOutT.textContent=typeState.round; scoreOutT.textContent=typeState.score;
+    typeChoicesEl.innerHTML="";
+    VIEW_TYPES.forEach(v=>{
+      const btn=document.createElement("button");
+      btn.className="typechoice"; btn.type="button"; btn.dataset.view=v.id;
+      btn.innerHTML="<b>"+v.label+"</b><span>"+v.short+"</span>";
+      btn.addEventListener("click",()=> onTypeChoice(v.id));
+      typeChoicesEl.appendChild(btn);
+    });
+  }
+  function onTypeChoice(id){
+    if(typeState.answered) return;
+    typeState.answered=true;
+    const correct=id===typeState.q.type;
+    if(correct){ typeState.score++; scoreOutT.textContent=typeState.score; }
+    const ansV=VIEW_TYPES.find(v=>v.id===typeState.q.type);
+    typeChoicesEl.querySelectorAll(".typechoice").forEach(b=>{
+      b.disabled=true;
+      if(b.dataset.view===typeState.q.type) b.classList.add("correct");
+      else if(b.dataset.view===id) b.classList.add("wrong");
+    });
+    toastT.className=correct?"toast ok":"toast go";
+    toastT.textContent=(correct?"정답! ":"정답은 “"+ansV.label+"”. ")+ansV.why;
+    nextTypeBtn.style.display="inline-block";
+  }
+  nextTypeBtn.addEventListener("click",()=>{
+    if(typeState.round>=5){ typeState.round=1; typeState.score=0; } else typeState.round++;
+    newTypeRound();
+  });
+  document.getElementById("restartTypeBtn").addEventListener("click",()=>{ typeState.round=1; typeState.score=0; newTypeRound(); });
+
+  // ---- 탭 ----
+  const tabFree=document.getElementById("tabFree"), tabMatch=document.getElementById("tabMatch"), tabDetect=document.getElementById("tabDetect"), tabType=document.getElementById("tabType");
+  function setMode(m){
+    mode=m;
+    tabFree.setAttribute("aria-pressed", m==="free");
+    tabMatch.setAttribute("aria-pressed", m==="match");
+    tabDetect.setAttribute("aria-pressed", m==="detect");
+    tabType.setAttribute("aria-pressed", m==="type");
+    partRow.style.display = m==="free" ? "flex":"none";
+    viewRow.style.display = m==="free" ? "flex":"none";
+    controlRow.style.display = (m==="free"||m==="match") ? "block":"none";
+    readoutRow.style.display = (m==="free"||m==="match") ? "flex":"none";
+    matchPanel.classList.toggle("hidden", m!=="match");
+    detectPanel.classList.toggle("hidden", m!=="detect");
+    typePanel.classList.toggle("hidden", m!=="type");
+    mysteryOverlay.classList.add("hidden");
+    setOverlayVisible(true);
+
+    if(m==="free"){ setPart(currentPartId); }
+    else if(m==="match"){ matchState.round=1; matchState.score=0; roundOut.textContent=1; scoreOut.textContent=0; newMatchRound(); }
+    else if(m==="detect"){ detectState.round=1; detectState.score=0; newDetectRound(); }
+    else if(m==="type"){ typeState.round=1; typeState.score=0; newTypeRound(); }
+  }
+  tabFree.onclick=()=>setMode("free");
+  tabMatch.onclick=()=>setMode("match");
+  tabDetect.onclick=()=>setMode("detect");
+  tabType.onclick=()=>setMode("type");
+
+  // ---- 초기화 ----
+  window.addEventListener("resize", ()=>{
+    resize3D();
+    if(mode==="detect" && !detectState.answered){
+      drawDetectSection();
+    } else if(mode==="type"){
+      drawTypeQuestion();
+      if(typeState.answered){ typeChoicesEl.querySelectorAll(".typechoice").forEach(b=>{ b.disabled=true; }); }
+    } else {
+      updatePanel();
+    }
+    if(mode==="match"){ drawSection(targetCv, computeSection(PARTS[currentPartId],currentAxis,matchState.targetX), {silhouette:computeSilhouette(PARTS[currentPartId],currentAxis)}); }
+  });
+  highlightAxisRow("x");
+  axisDesc.textContent=AXES.x.desc;
+  resize3D();
+  setMode("free");
+  animate();
+})();
+</script>
+</body>
+</html>
