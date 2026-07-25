@@ -1294,6 +1294,7 @@
     const part=PARTS[currentPartId];
     if(isMatched(part,currentAxis,cutPos,matchState.targetX)){
       matchState.matched=true; matchState.score++;
+      SectionStats.record("매칭", true, PARTS[currentPartId].label);
       scoreOut.textContent=matchState.score;
       stateOut.className="state match"; stateOut.textContent="일치! ✔";
       const tSpec=computeSection(part,currentAxis,matchState.targetX);
@@ -1373,6 +1374,7 @@
       // 첫 클릭 = 정답 제출
       detectState.answered=true;
       const correct = chosenId===detectState.partId;
+      SectionStats.record("탐정", correct, PARTS[detectState.partId].label);
       if(correct){ detectState.score++; scoreOutD.textContent=detectState.score; }
       choicesEl.querySelectorAll(".choice").forEach(btn=>{
         if(btn.dataset.id===detectState.partId) btn.classList.add("correct");
@@ -1445,6 +1447,8 @@
     if(typeState.answered) return;
     typeState.answered=true;
     const correct=id===typeState.q.type;
+    const ansV0=VIEW_TYPES.find(v=>v.id===typeState.q.type);
+    SectionStats.record("단면종류", correct, ansV0?ansV0.label:typeState.q.type);
     if(correct){ typeState.score++; scoreOutT.textContent=typeState.score; }
     const ansV=VIEW_TYPES.find(v=>v.id===typeState.q.type);
     typeChoicesEl.querySelectorAll(".typechoice").forEach(b=>{
@@ -1509,6 +1513,59 @@
   setMode("free");
   animate();
 })();
+
+/* ================= 결과 제출 (result-collector) =================
+   선생님이 링크생성기로 만든 ?rc= 링크로 열었을 때만 버튼 노출.
+   도전 3종(매칭·탐정·단면종류)의 문항별 정오를 누적해 한 번에 보냄. */
+var SectionStats=(function(){
+  var log=[], start=Date.now();
+  function record(mode, correct, answer){
+    log.push({mode:mode, correct:!!correct, answer:answer||""});
+    update();
+  }
+  function summary(){
+    var correct=log.filter(function(r){return r.correct;}).length;
+    var wrong=log.filter(function(r){return !r.correct;})
+                 .map(function(r){return r.mode+" — 정답: "+r.answer;});
+    return {correct:correct, total:log.length, wrong:wrong,
+            durationSec:Math.round((Date.now()-start)/1000)};
+  }
+  function hasEndpoint(){
+    var rc=window.ResultCollector;
+    return !!(rc && rc.config && rc.config.endpoint);
+  }
+  function update(){
+    var btn=document.getElementById("submitTeacherBtn");
+    if(!btn) return;
+    var s=summary();
+    btn.style.display=(hasEndpoint() && s.total>0)?"inline-block":"none";
+    btn.textContent="🧑‍🏫 선생님께 결과 제출 ("+s.total+"문제)";
+  }
+  function send(){
+    var rc=window.ResultCollector;
+    if(!rc){ alert("결과 제출 위젯을 불러오지 못했습니다. 인터넷 연결을 확인해 주세요."); return; }
+    var s=summary();
+    if(!s.total){ alert("아직 푼 문제가 없습니다. 도전 모드에서 문제를 풀어 주세요."); return; }
+    rc.config.tool="단면도 익스플로러";
+    rc.open({score:Math.round(s.correct/s.total*100), correct:s.correct,
+             total:s.total, wrong:s.wrong, durationSec:s.durationSec});
+  }
+  return {record:record, summary:summary, update:update, send:send};
+})();
+
+(function(){
+  var btn=document.createElement("button");
+  btn.id="submitTeacherBtn";
+  btn.textContent="🧑‍🏫 선생님께 결과 제출";
+  btn.style.cssText="position:fixed;right:16px;bottom:16px;z-index:9999;display:none;"+
+    "padding:12px 18px;border:none;border-radius:10px;cursor:pointer;"+
+    "background:#2f7d55;color:#fff;font-size:14px;font-weight:700;"+
+    "box-shadow:0 4px 14px rgba(0,0,0,.25);";
+  btn.addEventListener("click", function(){ SectionStats.send(); });
+  document.body.appendChild(btn);
+  window.addEventListener("load", SectionStats.update);
+})();
 </script>
+<script src="https://hongyul67-cpu.github.io/links/collector.js" data-tool="단면도 익스플로러"></script>
 </body>
 </html>
