@@ -1525,7 +1525,7 @@ var SectionStats=(function(){
     if(window.RankKit && log.length % 5 === 0){
       var seg = log.slice(-5);
       var ok  = seg.filter(function(r){ return r.correct; }).length;
-      RankKit.award(Math.round(ok/seg.length*100), '단면도 도전 — '+mode);
+      RankKit.award(Math.round(ok/seg.length*100), '단면도 — '+mode);
     }
     update();
   }
