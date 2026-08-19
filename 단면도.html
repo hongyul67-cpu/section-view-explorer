@@ -612,6 +612,7 @@
   // =========================================================
   const glCanvas=document.getElementById("gl");
   const renderer=new THREE.WebGLRenderer({canvas:glCanvas,antialias:true});
+  renderer.localClippingEnabled=true;      // 절단면에서 실제로 잘라내기 위해
   renderer.setClearColor(0x0E1B2A,1);
   const scene=new THREE.Scene();
   const camera=new THREE.PerspectiveCamera(42,1,0.1,100);
@@ -626,10 +627,18 @@
   const partGroup=new THREE.Group();
   group.add(partGroup);
 
-  function matBody(){ return new THREE.MeshStandardMaterial({color:0x9DB4C8,transparent:true,opacity:0.16,depthWrite:false,roughness:.9}); }
-  function matEdge(){ return new THREE.LineBasicMaterial({color:0x7FB6CC}); }
-  function matBore(){ return new THREE.MeshStandardMaterial({color:0x21384E,side:THREE.DoubleSide,transparent:true,opacity:0.6,roughness:.8}); }
-  function matRim(){ return new THREE.LineBasicMaterial({color:0x5BC8DE}); }
+  /* 절단면(월드 좌표). 이 평면보다 앞쪽(관찰자 쪽)을 잘라내 속을 드러낸다.
+     전에는 본체를 opacity 0.16 + depthWrite:false 로 그려서 면끼리 서로 가리지 못했고,
+     그래서 솔리드가 아니라 속 빈 서피스(와이어프레임)처럼 보였다. */
+  const clipPlane=new THREE.Plane(new THREE.Vector3(-1,0,0), 0);
+  const CLIP=[clipPlane];
+  function matBody(){ return new THREE.MeshStandardMaterial({
+    color:0x9DB4C8, roughness:.85, metalness:.05,
+    side:THREE.DoubleSide, clippingPlanes:CLIP, clipIntersection:false}); }
+  function matEdge(){ return new THREE.LineBasicMaterial({color:0x7FB6CC, clippingPlanes:CLIP}); }
+  function matBore(){ return new THREE.MeshStandardMaterial({
+    color:0x35506E, side:THREE.DoubleSide, roughness:.8, clippingPlanes:CLIP}); }
+  function matRim(){ return new THREE.LineBasicMaterial({color:0x5BC8DE, clippingPlanes:CLIP}); }
 
   function clearGroup(g){
     while(g.children.length){
@@ -652,7 +661,7 @@
   function buildRectPart(part){
     const boxGeo=new THREE.BoxGeometry(part.sizeX,part.sizeY,part.sizeZ);
     partGroup.add(new THREE.Mesh(boxGeo,matBody()));
-    partGroup.add(new THREE.LineSegments(new THREE.EdgesGeometry(boxGeo),matEdge()));
+    partGroup.add(new THREE.LineSegments(new THREE.EdgesGeometry(boxGeo,20),matEdge()));
     part.bores.forEach(b=>{
       const [dimA,dimB]=otherAxes(b.axis);
       const len=partSizeAlong(part,b.axis)+0.02;
@@ -682,7 +691,7 @@
       else geo=new THREE.CylinderGeometry(seg.R,seg.R,len,40);
 
       const mesh=new THREE.Mesh(geo,matBody());
-      const eLines=new THREE.LineSegments(new THREE.EdgesGeometry(geo),matEdge());
+      const eLines=new THREE.LineSegments(new THREE.EdgesGeometry(geo,20),matEdge());
       if(seg.shape==="rect"){ mesh.position[part.mainAxis]=cm; eLines.position[part.mainAxis]=cm; }
       else { orientAlongAxis(mesh,part.mainAxis,{[part.mainAxis]:cm}); orientAlongAxis(eLines,part.mainAxis,{[part.mainAxis]:cm}); }
       partGroup.add(mesh); partGroup.add(eLines);
@@ -719,7 +728,7 @@
       const cx=(b.x[0]+b.x[1])/2, cy=(b.y[0]+b.y[1])/2, cz=(b.z[0]+b.z[1])/2;
       const geo=new THREE.BoxGeometry(sx,sy,sz);
       const mesh=new THREE.Mesh(geo,matBody()); mesh.position.set(cx,cy,cz); partGroup.add(mesh);
-      const ed=new THREE.LineSegments(new THREE.EdgesGeometry(geo),matEdge()); ed.position.set(cx,cy,cz); partGroup.add(ed);
+      const ed=new THREE.LineSegments(new THREE.EdgesGeometry(geo,20),matEdge()); ed.position.set(cx,cy,cz); partGroup.add(ed);
     });
   }
   function rebuildPart(id){
@@ -757,7 +766,17 @@
     const hp={x:0,y:0,z:0}; hp[currentAxis]=cutPos; Object.assign(hp,off);
     handle.position.set(hp.x,hp.y,hp.z);
     slider.value=cutPos.toFixed(2);
+    syncClip();
     updatePanel();
+  }
+  /* 클리핑 평면은 월드 좌표라, 모델이 회전해 있어도 맞도록 group 변환을 태워 준다 */
+  function syncClip(){
+    group.updateMatrixWorld(true);
+    const n=new THREE.Vector3(currentAxis==="x"?1:0, currentAxis==="y"?1:0, currentAxis==="z"?1:0);
+    n.transformDirection(group.matrixWorld).normalize();
+    const pt=new THREE.Vector3(0,0,0); pt[currentAxis]=cutPos;
+    pt.applyMatrix4(group.matrixWorld);
+    clipPlane.setFromNormalAndCoplanarPoint(n.negate(), pt);   // 평면 뒤쪽만 남긴다
   }
   function refreshCuttingRig(){
     const part=PARTS[currentPartId];
