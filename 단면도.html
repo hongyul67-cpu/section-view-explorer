@@ -1374,7 +1374,7 @@
       // 첫 클릭 = 정답 제출
       detectState.answered=true;
       const correct = chosenId===detectState.partId;
-      SectionStats.record("탐정", correct, PARTS[detectState.partId].label);
+      SectionStats.record("탐정", correct, PARTS[detectState.partId].label, PARTS[chosenId]?PARTS[chosenId].label:"");
       if(correct){ detectState.score++; scoreOutD.textContent=detectState.score; }
       choicesEl.querySelectorAll(".choice").forEach(btn=>{
         if(btn.dataset.id===detectState.partId) btn.classList.add("correct");
@@ -1448,7 +1448,7 @@
     typeState.answered=true;
     const correct=id===typeState.q.type;
     const ansV0=VIEW_TYPES.find(v=>v.id===typeState.q.type);
-    SectionStats.record("단면종류", correct, ansV0?ansV0.label:typeState.q.type);
+    SectionStats.record("단면종류", correct, ansV0?ansV0.label:typeState.q.type, (function(){var v=VIEW_TYPES.find(function(x){return x.id===id;}); return v?v.label:id;})());
     if(correct){ typeState.score++; scoreOutT.textContent=typeState.score; }
     const ansV=VIEW_TYPES.find(v=>v.id===typeState.q.type);
     typeChoicesEl.querySelectorAll(".typechoice").forEach(b=>{
@@ -1519,8 +1519,8 @@
    도전 3종(매칭·탐정·단면종류)의 문항별 정오를 누적해 한 번에 보냄. */
 var SectionStats=(function(){
   var log=[], start=Date.now();
-  function record(mode, correct, answer){
-    log.push({mode:mode, correct:!!correct, answer:answer||""});
+  function record(mode, correct, answer, picked){
+    log.push({mode:mode, correct:!!correct, answer:answer||"", picked:picked||""});
     /* 랭킹전 — 5문제마다 그 구간의 정답률로 정산 (도전 3종 공통) */
     if(window.RankKit && log.length % 5 === 0){
       var seg = log.slice(-5);
@@ -1532,8 +1532,10 @@ var SectionStats=(function(){
   function summary(){
     var correct=log.filter(function(r){return r.correct;}).length;
     var wrong=log.filter(function(r){return !r.correct;})
-                 .map(function(r){return r.mode+" — 정답: "+r.answer;});
-    return {correct:correct, total:log.length, wrong:wrong,
+                 .map(function(r){return r.mode+" "+(r.picked||"무응답")+"→"+r.answer;});
+    /* 활동(파트) 열에 실제로 해 본 도전이 드러나게 한다 (규약 §1 ①) */
+    var parts=[]; log.forEach(function(r){ if(parts.indexOf(r.mode)<0) parts.push(r.mode); });
+    return {correct:correct, total:log.length, wrong:wrong, parts:parts,
             durationSec:Math.round((Date.now()-start)/1000)};
   }
   function hasEndpoint(){
@@ -1563,7 +1565,7 @@ var SectionStats=(function(){
     rc.config.tool="단면도 익스플로러";
     rc.open({score:Math.round(s.correct/s.total*100), correct:s.correct,
              total:s.total, wrong:s.wrong, durationSec:s.durationSec,
-             mode:"단면도 익스플로러 — 도전 모드",
+             mode:"단면도 익스플로러 — " + (s.parts.length?s.parts.join("·"):"도전 모드"),
              extra:["단면도 종류 구분"]});
   }
   return {record:record, summary:summary, update:update, send:send};
