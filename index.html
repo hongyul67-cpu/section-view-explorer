@@ -1288,7 +1288,7 @@
   slider.addEventListener("input",()=> setCutPos(parseFloat(slider.value)) );
 
   // ---- 매칭 ----
-  const matchState={round:1,score:0,targetX:null,matched:false};
+  const matchState={round:1,score:0,targetX:null,matched:false,ready:false};
   const roundOut=document.getElementById("roundOut"), scoreOut=document.getElementById("scoreOut");
   const toast=document.getElementById("toast"), nextBtn=document.getElementById("nextBtn");
   const targetCv=document.getElementById("targetCanvas"), matchTitle=document.getElementById("matchTitle");
@@ -1299,18 +1299,38 @@
   }
   function newMatchRound(){
     const pool=eligiblePool();
-    const id=pool[Math.floor(Math.random()*pool.length)];
+    /* 「다음엔 다른 부품이 나와요」라고 안내하므로 방금 푼 부품은 빼고 고른다 */
+    const fresh=pool.filter(p=> p!==currentPartId);
+    const id=(fresh.length?fresh:pool)[Math.floor(Math.random()*(fresh.length?fresh.length:pool.length))];
+    /* 새 문제를 차리는 동안에는 채점하지 않는다 —
+       setPart→refreshCuttingRig→setCutPos→updatePanel 이 checkMatch 를 부르는데,
+       그때 targetX 가 아직 이전 문제 것이라 손대기도 전에 정답 처리되던 문제가 있었다. */
+    matchState.ready=false;
+    matchState.matched=false;
+    matchState.targetX=null;
     setPart(id);
     const part=PARTS[id];
-    matchState.targetX=genericSampleX(part,currentAxis);
-    matchState.matched=false;
+    let tx=genericSampleX(part,currentAxis);
+    /* 시작 절단 위치가 이미 목표와 같으면 아무것도 안 해도 정답이 된다 — 겹치지 않는 목표를 고른다 */
+    for(let i=0;i<40 && isMatched(part,currentAxis,cutPos,tx);i++) tx=genericSampleX(part,currentAxis);
+    if(isMatched(part,currentAxis,cutPos,tx)){
+      /* 그래도 겹치면 절단면을 목표와 다른 자리로 옮겨 놓고 시작한다 */
+      const mn=parseFloat(slider.min), mx=parseFloat(slider.max);
+      for(let i=0;i<=40;i++){
+        const p=mn+(mx-mn)*i/40;
+        if(!isMatched(part,currentAxis,p,tx)){ setCutPos(p); break; }
+      }
+    }
+    matchState.targetX=tx;
     nextBtn.style.display="none";
     matchTitle.textContent="“"+part.label+"” 단면 맞추기";
     toast.className="toast go"; toast.textContent="목표 단면에 맞춰 절단면을 움직여 보세요.";
     drawSection(targetCv, computeSection(part,currentAxis,matchState.targetX), {silhouette:computeSilhouette(part,currentAxis)});
     updatePanel();
+    matchState.ready=true;          // 여기서부터 학생이 움직인 것만 채점한다
   }
   function checkMatch(){
+    if(!matchState.ready) return;
     if(matchState.matched) return;
     const part=PARTS[currentPartId];
     if(isMatched(part,currentAxis,cutPos,matchState.targetX)){
@@ -1570,6 +1590,8 @@ var SectionStats=(function(){
     /* 제출 버튼은 ?rc= 링크가 아니어도 보인다 (규약 §1 ③) — 푼 문제가 있으면 표시 */
     btn.style.display=(s.total>0)?"inline-block":"none";
     btn.textContent="🧑‍🏫 선생님께 결과 제출 ("+s.total+"문제)";
+    /* 버튼이 보이거나 글자 길이가 바뀌면 공용 단추 위로 다시 올린다 */
+    try{ if(SectionStats.__place) SectionStats.__place(); }catch(e){}
   }
   function send(){
     var rc=window.ResultCollector;
@@ -1602,7 +1624,27 @@ var SectionStats=(function(){
     "box-shadow:0 4px 14px rgba(0,0,0,.25);";
   btn.addEventListener("click", function(){ SectionStats.send(); });
   document.body.appendChild(btn);
-  window.addEventListener("load", SectionStats.update);
+
+  /* 오른쪽 아래 구석에는 공용 단추가 더 붙는다 —
+     class-mode.js 의 「🎓 수업모드」(.cm-launch), fx.js 의 소리 토글(#fxSnd), 계급 배지(#rk-badge).
+     제출 버튼은 z-index 가 낮아 그 밑에 깔려 오른쪽 글자가 가려지고 클릭까지 뺏겼다.
+     붙어 있는 것들을 재서 그 위로 올린다 (rank.js 배지가 쓰는 방식과 같다). */
+  function place(){
+    var up=16;
+    ['.cm-launch','#fxSnd','#rk-badge'].forEach(function(sel){
+      var o=document.querySelector(sel); if(!o) return;
+      var r=o.getBoundingClientRect();
+      if(!r.height) return;
+      if(r.right < window.innerWidth-240) return;      /* 오른쪽 아래에 붙은 것만 센다 */
+      up=Math.max(up, Math.round(window.innerHeight-r.top)+8);
+    });
+    btn.style.bottom=up+"px";
+  }
+  SectionStats.__place=place;
+  place();
+  [0,300,900].forEach(function(ms){ setTimeout(place,ms); });   /* 늦게 붙는 공용 단추까지 */
+  window.addEventListener("load", function(){ SectionStats.update(); place(); });
+  window.addEventListener("resize", place);
 })();
 </script>
 <script src="https://hongyul67-cpu.github.io/links/collector.js" data-tool="단면도 익스플로러"></script>
