@@ -67,6 +67,19 @@
   .viewBtn[aria-pressed="true"]{background:var(--proj);color:#04121c;border-color:var(--proj)}
   .viewBtn:disabled{opacity:.32;cursor:default}
   .viewDesc{flex-basis:100%;font-size:11px;color:var(--muted);line-height:1.35}
+  /* 그림(figs.js) — 종류 설명 옆 🖼️ 단추 · 학습 포인트 밑 그림 모음 */
+  .figBtn{margin-left:auto;background:transparent;border:1px solid var(--line);color:var(--cyan);padding:6px 10px;border-radius:4px;cursor:pointer;font-weight:700;font-size:11.5px}
+  .figBtn:hover{border-color:var(--cyan)}
+  .figMore{margin-top:8px}
+  .figMore .figBtn{margin-left:0;font-size:12.5px;padding:8px 12px;text-align:left}
+  /* 그림 모음은 화면 가득 따로 연다 — 이 페이지는 높이가 화면에 고정이라 아래에 펼치면 3D 화면이 찌그러진다 */
+  #figSheet{position:fixed;inset:0;z-index:99000;background:var(--bg);overflow:auto;-webkit-overflow-scrolling:touch;padding:0 16px 30px}
+  #figSheet .fs-head{position:sticky;top:0;z-index:1;display:flex;align-items:center;gap:10px;background:var(--bg);padding:12px 0;border-bottom:1px solid var(--line);margin-bottom:14px}
+  #figSheet .fs-head b{font-size:16px;color:var(--ink)}
+  #figSheet .fs-head span{font-size:12px;color:var(--muted)}
+  #figSheet .fs-x{margin-left:auto;width:42px;height:42px;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--ink);font-size:18px;cursor:pointer;flex:none}
+  #figSheet .fig-gallery{max-width:1180px;margin:0 auto}
+  #figSheet figure.fig figcaption{color:var(--muted)}
 
   /* 단면 종류 맞히기(도전) 선택지 */
   .typechoices{display:grid;grid-template-columns:1fr 1fr;gap:7px}
@@ -207,6 +220,7 @@
       <div class="viewRow" id="viewRow">
         <span class="axisLabel">단면도 종류</span>
         <div class="viewBtns" id="viewBtns"></div>
+        <button class="figBtn" id="viewFigBtn" type="button" title="지금 고른 단면도 종류를 그림으로 크게 봅니다">🖼️ 그림</button>
         <span class="viewDesc" id="viewDesc"></span>
       </div>
 
@@ -272,6 +286,7 @@
 
   <footer>
     학습 포인트 — 구멍 축과 나란히 자르면 <b>슬롯</b>, 수직으로 자르면 <b>원</b>이 나와요. 육각 머리는 보는 방향에 따라 <b>육각형 ↔ 직사각형</b>으로, 계단형 블록은 가로지르면 <b>층이 진 폭</b>으로 보여요. L자 브라켓은 위치에 따라 <b>한쪽 팔 또는 L 전체</b>가, 속 빈 파이프는 옆에서 자르면 <b>벽 두께만큼 두 줄</b>이 보여요.
+    <div class="figMore"><button class="figBtn" id="figMoreBtn" type="button">🖼️ 그림으로 먼저 보기 — 자르는 원리 · 부품별 단면 · 단면도 종류</button></div>
   </footer>
 
 <script>
@@ -1221,6 +1236,13 @@
     b.addEventListener("click",()=>{ if(!b.disabled){ currentViewType=v.id; updatePanel(); } });
     viewBtnsEl.appendChild(b);
   });
+  // 🖼️ — 지금 고른 단면도 종류의 그림(figs.js). viewRow 는 자유 탐색에서만 보이므로 도전 중에는 누를 수 없다
+  (function(){
+    const fb=document.getElementById("viewFigBtn");
+    if(!fb) return;
+    /* fig.js 는 이 스크립트보다 늦게 읽힌다 — 누를 때 확인한다(못 읽었으면 아래 그림 스크립트가 단추를 숨긴다) */
+    fb.addEventListener("click",()=>{ if(window.FIG && FIG.has(currentViewType)) FIG.zoom(currentViewType); });
+  })();
   // 현재 부품·축·위치에서 가능한 종류만 활성화하고, 불가능하면 온단면도로 되돌림
   function refreshViewButtons(){
     const av=availableViews(PARTS[currentPartId],currentAxis,cutPos);
@@ -1742,6 +1764,31 @@ var SectionStats=(function(){
 </script>
 <!-- 수업 슬라이드 — 원고(lesson.js) 는 이 저장소 것, 화면(board-pro.js) 은 links 의 공용 파일이다.
      저장소에 사본을 두지 않는다. 화면을 고쳐야 하면 links 저장소에서 고친다. -->
+<!-- 그림 — 그리는 도구(fig.js)는 links 의 공용 파일, 그림 모음(figs.js)은 이 저장소 것. lesson.js 보다 먼저 -->
+<script src="https://hongyul67-cpu.github.io/links/fig.js"></script>
+<script src="figs.js"></script>
+<script>
+/* 학습 포인트 밑 「🖼️ 그림으로 먼저 보기」 — 화면 가득 그림 모음(points 먼저, 그다음 종류). 그림을 누르면 크게 */
+(function(){
+  var btn=document.getElementById("figMoreBtn");
+  if(!btn) return;
+  if(!window.FIG || !window.FIGS){ btn.parentNode.style.display="none"; var fb=document.getElementById("viewFigBtn"); if(fb) fb.style.display="none"; return; }
+  var keys=Object.keys(FIGS), pick=function(sp){ return keys.filter(function(k){ return FIGS[k].spot===sp; }); };
+  function close(){ var d=document.getElementById("figSheet"); if(d) d.remove(); document.removeEventListener("keydown", onKey); }
+  function onKey(e){ if(e.key==="Escape" && !document.getElementById("fig-zoom")) close(); }
+  btn.addEventListener("click", function(){
+    close();
+    var list=pick("points").concat(pick("types")), d=document.createElement("div");
+    d.id="figSheet"; d.setAttribute("role","dialog"); d.setAttribute("aria-modal","true");
+    d.innerHTML='<div class="fs-head"><div><b>🖼️ 그림으로 먼저 보기</b><br><span>'+list.length+'장 · 그림을 누르면 크게 봅니다</span></div>'+
+      '<button type="button" class="fs-x" aria-label="닫기">✕</button></div>'+FIG.gallery(list);
+    d.querySelector(".fs-x").addEventListener("click", close);
+    document.body.appendChild(d);
+    document.addEventListener("keydown", onKey);
+    d.querySelector(".fs-x").focus();
+  });
+})();
+</script>
 <script src="lesson.js"></script>
 <script src="https://hongyul67-cpu.github.io/links/board-pro.js"></script>
 <script>
