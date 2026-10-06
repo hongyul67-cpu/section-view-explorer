@@ -682,7 +682,26 @@
 
   function buildRectPart(part){
     const boxGeo=new THREE.BoxGeometry(part.sizeX,part.sizeY,part.sizeZ);
-    partGroup.add(new THREE.Mesh(boxGeo,matBody()));
+    /* 구멍이 지나는 두 끝면은 상자 면 대신 '구멍 뚫린 면'으로 바꾼다.
+       상자 면을 그대로 두면 구멍 입구가 막혀 보인다. */
+    const bAx=part.boreAxis, gi={x:0,y:2,z:4}[bAx];      // BoxGeometry 면 순서: +x,-x,+y,-y,+z,-z
+    const sideGeo=boxGeo.clone();
+    sideGeo.setIndex(Array.from(boxGeo.index.array).filter(function(_,i){ const f=Math.floor(i/6); return f!==gi && f!==gi+1; }));
+    partGroup.add(new THREE.Mesh(sideGeo,matBody()));
+    const uv=otherAxes(bAx), hand=(bAx==="y")?-1:1;      // (x,z,y) 순서는 왼손 좌표라 면 방향이 뒤집힌다
+    [1,-1].forEach(function(sign){
+      const sh=rectShape(-partSizeAlong(part,uv[0])/2,partSizeAlong(part,uv[0])/2,-partSizeAlong(part,uv[1])/2,partSizeAlong(part,uv[1])/2);
+      part.bores.forEach(function(bo){ sh.holes.push(circlePath(bo.a0,bo.b0,bo.R,THREE.Path)); });
+      const g=new THREE.ShapeGeometry(sh,48), pos=g.attributes.position, nor=g.attributes.normal;
+      for(let i=0;i<pos.count;i++){
+        const q={x:0,y:0,z:0}, n={x:0,y:0,z:0};
+        q[uv[0]]=pos.getX(i); q[uv[1]]=pos.getY(i); q[bAx]=sign*partSizeAlong(part,bAx)/2; n[bAx]=sign;
+        pos.setXYZ(i,q.x,q.y,q.z); nor.setXYZ(i,n.x,n.y,n.z);
+      }
+      if(sign*hand<0){ const ix=g.index.array; for(let i=0;i<ix.length;i+=3){ const t=ix[i+1]; ix[i+1]=ix[i+2]; ix[i+2]=t; } }
+      g.computeBoundingSphere();
+      partGroup.add(new THREE.Mesh(g,matBody()));
+    });
     partGroup.add(new THREE.LineSegments(new THREE.EdgesGeometry(boxGeo,20),matEdge()));
     part.bores.forEach(b=>{
       const [dimA,dimB]=otherAxes(b.axis);
@@ -862,7 +881,8 @@
   // 절단면 오버레이
   const planeMesh=new THREE.Mesh(
     new THREE.PlaneGeometry(4.6,3.6),
-    new THREE.MeshBasicMaterial({color:0xE8A13A,transparent:true,opacity:0.22,side:THREE.DoubleSide,depthWrite:false})
+    new THREE.MeshBasicMaterial({color:0xE8A13A,transparent:true,opacity:0.22,side:THREE.DoubleSide,depthWrite:false,
+      polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2})   // 부품 끝면과 딱 겹칠 때 줄무늬로 지글거리지 않게
   );
   group.add(planeMesh);
   const planeEdge=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(4.6,3.6)), new THREE.LineBasicMaterial({color:0xE8A13A}));
