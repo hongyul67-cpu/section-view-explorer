@@ -643,6 +643,12 @@
   const dirL=new THREE.DirectionalLight(0xcfeaff,0.9); dirL.position.set(5,8,6); scene.add(dirL);
   const dirL2=new THREE.DirectionalLight(0xE8A13A,0.25); dirL2.position.set(-6,-2,-4); scene.add(dirL2);
 
+  /* 모델 뒤 모눈 배경. 배경이 민무늬 남색이면 뚫린 구멍이 '어둡게 칠한 원'으로 보여서,
+     구멍 너머로 모눈이 이어져 보이게 해 정말 뚫렸다는 것을 알린다. */
+  const backGrid=new THREE.GridHelper(60,150,0x3A6A8E,0x3A6A8E);
+  backGrid.rotation.x=Math.PI/2; backGrid.position.z=-7;
+  scene.add(backGrid);
+
   const group=new THREE.Group();
   group.rotation.set(-0.32,-0.6,0);
   scene.add(group);
@@ -658,8 +664,10 @@
     color:0x9DB4C8, roughness:.85, metalness:.05,
     side:THREE.DoubleSide, clippingPlanes:CLIP, clipIntersection:false}); }
   function matEdge(){ return new THREE.LineBasicMaterial({color:0x7FB6CC, clippingPlanes:CLIP}); }
+  /* 구멍 안쪽 벽. 전에는 배경과 비슷한 어두운 남색이라 구멍이 '검게 칠한 원'처럼 막혀 보였다.
+     본체와 확실히 다른 밝은 청록으로 칠하고 스스로 빛나게 해서, 뚫린 굴로 읽히게 한다. */
   function matBore(){ return new THREE.MeshStandardMaterial({
-    color:0x35506E, side:THREE.DoubleSide, roughness:.8, clippingPlanes:CLIP}); }
+    color:0x2FC9DE, emissive:0x0E6F80, side:THREE.DoubleSide, roughness:.6, clippingPlanes:CLIP}); }
   function matRim(){ return new THREE.LineBasicMaterial({color:0x5BC8DE, clippingPlanes:CLIP}); }
 
   function clearGroup(g){
